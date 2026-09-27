@@ -2,21 +2,24 @@
 
 ## Runtime flow
 
-`main` creates `Game`. `Game` owns the SDL window/context, `World`, `Camera` and `Renderer`. Each frame it processes SDL events, updates movement and gravity, renders the current world mesh, and swaps the window buffer.
+`Game` owns SDL/OpenGL, `World` owns the chunk map and worker queues, and `Renderer` owns GPU resources. Each frame updates the streaming center, drains CPU job results, uploads a bounded amount of mesh data on the render thread, culls chunks and draws ready meshes.
 
-## Modules
+## Chunk ownership and states
 
-- `World`: fixed-size block storage, bounds-safe access, flat-world initialization and raycast interaction.
-- `Block`: block types, solid-block rules and display colors.
-- `Camera`: FPS position/orientation and view/projection matrices.
-- `Renderer`: visible-face mesh generation, OpenGL buffers, shader program and draw calls.
-- `Game`: SDL lifecycle, input, movement, jumping and block placement/removal.
-- `third_party/glad`: small vendored OpenGL function loader used after SDL creates the context.
+A `ChunkRecord` is metadata plus shared immutable CPU snapshots and a version. State transitions are `Unloaded -> Queued -> Loading -> Generated -> Meshing -> Uploading -> Ready`; cancellation/unload and `Failed` are terminal branches for a stale job. Generation and meshing workers never call OpenGL. Version checks prevent late results from replacing newer edits.
 
-## Rendering data flow
+The map is hashed by `ChunkCoord { int64_t x, z }`. Generation and meshing queues are priority queues ordered by chunk distance, camera alignment and starvation-safe age. Map/queue locks are held only while looking up or moving work; generation and meshing operate on owned snapshots.
 
-World changes trigger `Renderer::rebuildMesh`. The renderer emits two triangles for every exposed block face, uploads the vertex list to one VBO, and draws it with a VAO. The vertex shader applies camera matrices; the fragment shader outputs the per-face block color.
+## World and edits
 
-## v1.0 boundaries
+Chunks are `16x256x16`, with local Y in `0..255`. The deterministic v1.1 terrain has Bedrock at Y=0, Stone through Y=61, Dirt at Y=62 and Grass at Y=63. `EditJournal` records block edits in memory and is applied after generation. Bedrock is rejected by both data and gameplay mutation paths.
 
-The world is one fixed chunk and is not persisted. There is no texture atlas, chunk streaming, procedural terrain, networking or inventory UI. These can be added behind the existing `World` and `Renderer` interfaces in later versions.
+## Meshing and rendering
+
+Meshing first removes faces against solid neighbors, including loaded cross-chunk border snapshots. Coplanar compatible faces are merged by greedy meshing. Vertices pack local X/Z, Y, block, face and AO into one uint32; indices are uint32. LOD0 is used near the player and LOD1 uses a coarse surface mesh in the outer render ring. CPU distance/forward culling precedes renderer frustum-style visibility checks; OpenGL depth and back-face culling reduce raster work.
+
+Every chunk has a CPU mesh version and dirty state. A block edit marks mesh dirty without regenerating terrain. The render thread owns VAO/VBO/EBO creation/destruction and consumes `ChunkUpload` results from workers.
+
+## Profiling
+
+`Profiler` records frame and named phase timings and exports CSV, JSON and Chrome trace JSON. `BloxideBenchmark` runs cold-stream, steady-state, traversal and edit-position scenarios. CPU phase percentages are derived from exclusive timings. OpenGL timer queries can be added around terrain passes; hardware GPU utilization is intentionally not reported because it is not portable across OpenGL drivers.

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(Bloxide VERSION 1.0.0 LANGUAGES C CXX)
+project(Bloxide VERSION 1.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -22,6 +22,10 @@ target_include_directories(glad PUBLIC third_party/glad/include)
 add_library(bloxide_core STATIC
     src/Block.cpp
     src/Camera.cpp
+    src/Chunk.cpp
+    src/ChunkGenerator.cpp
+    src/ChunkMesher.cpp
+    src/Profiler.cpp
     src/Renderer.cpp
     src/World.cpp
 )
@@ -46,6 +50,12 @@ target_compile_definitions(Bloxide PRIVATE
 )
 target_link_libraries(Bloxide PRIVATE bloxide_core SDL2::SDL2 OpenGL::GL)
 
+add_executable(BloxideBenchmark
+    tools/Benchmark.cpp
+)
+target_include_directories(BloxideBenchmark PRIVATE include)
+target_link_libraries(BloxideBenchmark PRIVATE bloxide_core)
+
 if(WIN32)
     add_custom_command(TARGET Bloxide POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -63,4 +73,5 @@ if(BUILD_TESTING)
     target_include_directories(BloxideWorldTests PRIVATE include)
     target_link_libraries(BloxideWorldTests PRIVATE bloxide_core)
     add_test(NAME BloxideWorldTests COMMAND BloxideWorldTests)
+    add_test(NAME BloxideBenchmarkSmoke COMMAND BloxideBenchmark --quick)
 endif()

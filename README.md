@@ -1,53 +1,54 @@
 # Bloxide
 
-Bloxide is a small Minecraft-inspired voxel prototype written in C++17 with SDL2 and OpenGL 3.3 Core.
+Bloxide is a C++17 voxel prototype using SDL2 and OpenGL 3.3 Core. Version 1.1 adds an infinite flat world streamed in 16x256x16 chunks.
 
-## v1.0 features
+## v1.1 features
 
-- SDL2 window and OpenGL 3.3 renderer
-- Flat 32×16×32 voxel world
-- Grass, dirt and stone blocks
-- FPS camera with WASD, mouse look and jump
-- Left-click removes a block; right-click places grass
-- Headless world smoke test through CTest
-
-## Requirements
-
-Windows with [MSYS2 UCRT64](https://www.msys2.org/) is the supported development environment. The current setup expects GCC, CMake and SDL2 to be available under `D:/msys64/ucrt64`.
+- Infinite signed `int64` chunk coordinates with correct negative floor division.
+- Deterministic terrain: Bedrock at Y=0, Stone Y=1..61, Dirt Y=62, Grass Y=63 and Air above.
+- Generation distance 10, simulation distance 6 and render distance 8 using Chebyshev chunk distance.
+- Two generation workers and two meshing workers with priority queues, cancellation and chunk states.
+- Hidden-face removal, greedy meshing, packed 32-bit vertices, uint32 index buffers and simple LOD1.
+- Main-thread-only OpenGL upload with per-frame streaming work bounded by the render loop.
+- In-memory edit journal; Bedrock cannot be removed.
+- `BloxideBenchmark` emits CSV, JSON summary and Chrome trace files.
 
 ## Build
 
-Run these commands from an MSYS2 UCRT64 shell:
-
-```bash
-cmake -S . -B build -G "MSYS Makefiles" -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=/ucrt64
-cmake --build build
-ctest --test-dir build --output-on-failure
-./build/Bloxide.exe
-```
-
-From PowerShell, use the installed CMake and pass the Windows prefix explicitly:
+Supported environment: Windows/MSYS2 UCRT64 with GCC, CMake and SDL2. Configure with the official CMake executable if the MSYS2 CMake binary crashes:
 
 ```powershell
-cmake -S . -B build -DCMAKE_PREFIX_PATH=D:/msys64/ucrt64
-cmake --build build --config Release
-ctest --test-dir build -C Release --output-on-failure
+cmake -S . -B build-cmake -G "MinGW Makefiles" `
+  -DCMAKE_C_COMPILER=D:/msys64/ucrt64/bin/gcc.exe `
+  -DCMAKE_CXX_COMPILER=D:/msys64/ucrt64/bin/g++.exe `
+  -DCMAKE_MAKE_PROGRAM=D:/msys64/ucrt64/bin/mingw32-make.exe `
+  -DCMAKE_PREFIX_PATH=D:/msys64/ucrt64 -DCMAKE_BUILD_TYPE=Release
+cmake --build build-cmake --parallel 2
+ctest --test-dir build-cmake --output-on-failure
 ```
 
-If the MSYS2 CMake binary crashes before printing its version, install the official Windows CMake package and use that executable for the commands above. The compiler can remain `D:/msys64/ucrt64/bin/g++.exe`.
+Run the game from the repository root so shader paths resolve:
+
+```powershell
+build-cmake/Bloxide.exe
+```
+
+## Benchmark
+
+```powershell
+build-cmake/BloxideBenchmark.exe
+build-cmake/BloxideBenchmark.exe --quick
+```
+
+Results are written under `build/benchmark`: `v1.1-runtime.csv`, `v1.1-summary.json`, `v1.1-trace.json` and `v1.1-metrics.txt`. The runtime game writes the same profiler formats after exit. Press `F3` in a future HUD-enabled build to display runtime counters; the current window title reports the active chunk/draw counters when the HUD is enabled in source.
 
 ## Controls
 
-WASD moves, the mouse looks around, Space jumps, left mouse removes a block, right mouse places grass, and Esc releases or captures the mouse.
-
-## Troubleshooting
-
-- If CMake cannot find SDL2, verify `D:/msys64/ucrt64/lib/cmake/SDL2/SDL2Config.cmake` exists and pass `-DCMAKE_PREFIX_PATH=D:/msys64/ucrt64`.
-- If the executable cannot find SDL2 at runtime, add `D:/msys64/ucrt64/bin` to `PATH` or copy `SDL2.dll` beside the executable.
-- An OpenGL 3.3-capable graphics driver is required.
+WASD moves, mouse looks, Space jumps, left mouse removes a breakable block, right mouse places grass, and Esc releases or captures the mouse.
 
 ## Project documents
 
-- [ARCHITECTURES.md](ARCHITECTURES.md) describes the runtime modules and data flow.
-- [CHANGELOG.md](CHANGELOG.md) records releases.
-- [LICENSE](LICENSE) contains the MIT license.
+- [ARCHITECTURES.md](ARCHITECTURES.md)
+- [PERFORMANCE.md](PERFORMANCE.md)
+- [CHANGELOG.md](CHANGELOG.md)
+- [LICENSE](LICENSE)

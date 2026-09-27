@@ -27,9 +27,13 @@ typedef ptrdiff_t GLsizeiptr;
 #define GL_COLOR_BUFFER_BIT 0x00004000
 #define GL_DEPTH_BUFFER_BIT 0x00000100
 #define GL_DEPTH_TEST 0x0B71
+#define GL_CULL_FACE 0x0B44
+#define GL_BACK 0x0405
 #define GL_ARRAY_BUFFER 0x8892
+#define GL_ELEMENT_ARRAY_BUFFER 0x8893
 #define GL_STATIC_DRAW 0x88E4
 #define GL_FLOAT 0x1406
+#define GL_UNSIGNED_INT 0x1405
 #define GL_TRIANGLES 0x0004
 #define GL_VERTEX_SHADER 0x8B31
 #define GL_FRAGMENT_SHADER 0x8B30
@@ -43,6 +47,8 @@ void glClearColor(GLfloat, GLfloat, GLfloat, GLfloat);
 void glClear(GLbitfield);
 void glEnable(GLenum);
 void glViewport(GLint, GLint, GLsizei, GLsizei);
+void glCullFace(GLenum);
+void glDrawElements(GLenum, GLsizei, GLenum, const void*);
 extern GLuint (*glCreateShader)(GLenum);
 extern void (*glShaderSource)(GLuint, GLsizei, const GLchar* const*, const GLint*);
 extern void (*glCompileShader)(GLuint);
@@ -56,6 +62,7 @@ extern void (*glDeleteProgram)(GLuint);
 extern void (*glUseProgram)(GLuint);
 extern GLint (*glGetUniformLocation)(GLuint, const GLchar*);
 extern void (*glUniformMatrix4fv)(GLint, GLsizei, GLboolean, const GLfloat*);
+extern void (*glUniform3f)(GLint, GLfloat, GLfloat, GLfloat);
 extern void (*glGenVertexArrays)(GLsizei, GLuint*);
 extern void (*glDeleteVertexArrays)(GLsizei, const GLuint*);
 extern void (*glBindVertexArray)(GLuint);
@@ -64,6 +71,7 @@ extern void (*glDeleteBuffers)(GLsizei, const GLuint*);
 extern void (*glBindBuffer)(GLenum, GLuint);
 extern void (*glBufferData)(GLenum, GLsizeiptr, const void*, GLenum);
 extern void (*glVertexAttribPointer)(GLuint, GLint, GLenum, GLboolean, GLsizei, const void*);
+extern void (*glVertexAttribIPointer)(GLuint, GLint, GLenum, GLsizei, const void*);
 extern void (*glEnableVertexAttribArray)(GLuint);
 void glDrawArrays(GLenum, GLint, GLsizei);
 

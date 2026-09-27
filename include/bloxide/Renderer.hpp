@@ -3,34 +3,40 @@
 #include "bloxide/Camera.hpp"
 #include "bloxide/World.hpp"
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
-#include <vector>
+#include <unordered_map>
 
 namespace bloxide {
 
 class Renderer {
 public:
-    struct Vertex {
-        float x, y, z;
-        float r, g, b;
-    };
-
     Renderer() = default;
     ~Renderer();
-
     Renderer(const Renderer&) = delete;
     Renderer& operator=(const Renderer&) = delete;
 
     bool initialize(const std::string& vertexShaderPath, const std::string& fragmentShaderPath);
-    void rebuildMesh(const World& world);
-    void render(const Camera& camera, int width, int height);
+    bool upload(const ChunkUpload& upload);
+    void render(const Camera& camera, const std::vector<RenderChunk>& chunks, int width, int height);
+    [[nodiscard]] std::size_t drawCalls() const noexcept { return drawCalls_; }
+    [[nodiscard]] std::size_t uploadedBytes() const noexcept { return uploadedBytes_; }
 
 private:
-    unsigned int vao_ = 0;
-    unsigned int vbo_ = 0;
+    struct GpuMesh {
+        unsigned int vao = 0;
+        unsigned int vbo = 0;
+        unsigned int ebo = 0;
+        std::uint32_t indexCount = 0;
+        std::uint64_t version = 0;
+    };
+
+    void destroy(GpuMesh& mesh);
     unsigned int program_ = 0;
-    std::vector<Vertex> vertices_;
+    std::unordered_map<ChunkCoord, GpuMesh, ChunkCoordHash> meshes_;
+    std::size_t drawCalls_ = 0;
+    std::size_t uploadedBytes_ = 0;
 };
 
 } // namespace bloxide

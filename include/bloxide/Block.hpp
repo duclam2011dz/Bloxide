@@ -6,6 +6,7 @@ namespace bloxide {
 
 enum class BlockType : unsigned char {
     Air = 0,
+    Bedrock,
     Grass,
     Dirt,
     Stone
@@ -18,6 +19,7 @@ struct Color {
 };
 
 [[nodiscard]] bool isSolid(BlockType block) noexcept;
+[[nodiscard]] bool isBreakable(BlockType block) noexcept;
 [[nodiscard]] Color blockColor(BlockType block) noexcept;
 
 } // namespace bloxide
