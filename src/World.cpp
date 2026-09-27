@@ -110,6 +110,15 @@ void World::pumpResults() {
     }
 }
 
+void World::markNeighborMeshes(const ChunkCoord& coord) {
+    const std::array<ChunkCoord, 4> neighbors{{{coord.x - 1, coord.z}, {coord.x + 1, coord.z}, {coord.x, coord.z - 1}, {coord.x, coord.z + 1}}};
+    std::scoped_lock lock(mapMutex_);
+    for (const auto& neighbor : neighbors) {
+        const auto it = chunks_.find(neighbor);
+        if (it != chunks_.end() && it->second->state == ChunkState::Ready) { it->second->state = ChunkState::Generated; it->second->dirty = static_cast<unsigned char>(ChunkDirty::Neighbor) | static_cast<unsigned char>(ChunkDirty::Mesh); }
+    }
+}
+
 void World::update(const std::array<float, 3>& playerPosition, const std::array<float, 3>& viewDirection) {
     pumpResults();
     playerChunk_ = worldToChunk(playerPosition[0], playerPosition[2]);
