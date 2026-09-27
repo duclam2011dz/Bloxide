@@ -1,0 +1,15 @@
+# Generated build output
+build/
+build-cmake/
+build-tools/
+
+# IDE/editor files
+.vscode/
+.idea/
+compile_commands.json
+
+# Local binaries and crash dumps
+*.exe
+*.dll
+*.pdb
+*.dmp
