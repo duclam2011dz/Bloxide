@@ -21,6 +21,8 @@ typedef int GLsizei;
 typedef float GLfloat;
 typedef char GLchar;
 typedef ptrdiff_t GLsizeiptr;
+typedef struct __GLsync* GLsync;
+typedef unsigned long long GLuint64;
 
 #define GL_FALSE 0
 #define GL_TRUE 1
@@ -41,6 +43,12 @@ typedef ptrdiff_t GLsizeiptr;
 #define GL_FRAGMENT_SHADER 0x8B30
 #define GL_COMPILE_STATUS 0x8B81
 #define GL_LINK_STATUS 0x8B82
+#define GL_SYNC_GPU_COMMANDS_COMPLETE 0x9117
+#define GL_ALREADY_SIGNALED 0x911A
+#define GL_CONDITION_SATISFIED 0x911C
+#define GL_LEQUAL 0x0203
+#define GL_LESS 0x0201
+#define GL_NO_ERROR 0
 
 typedef void* (*GLADloadproc)(const char* name);
 int gladLoadGLLoader(GLADloadproc load);
@@ -51,6 +59,13 @@ void glEnable(GLenum);
 void glViewport(GLint, GLint, GLsizei, GLsizei);
 void glCullFace(GLenum);
 void glReadPixels(GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, void*);
+GLenum glGetError(void);
+void glDisable(GLenum);
+void glDepthMask(GLboolean);
+void glDepthFunc(GLenum);
+extern GLsync (*glFenceSync)(GLenum, GLbitfield);
+extern GLenum (*glClientWaitSync)(GLsync, GLbitfield, GLuint64);
+extern void (*glDeleteSync)(GLsync);
 void glDrawElements(GLenum, GLsizei, GLenum, const void*);
 extern GLuint (*glCreateShader)(GLenum);
 extern void (*glShaderSource)(GLuint, GLsizei, const GLchar* const*, const GLint*);

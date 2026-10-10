@@ -1,35 +1,43 @@
-# Bloxide architecture — v1.1.5
+# Bloxide architecture - v1.2.0
 
-## Runtime and ownership
+## Ownership and frame order
 
-Game owns SDL/OpenGL, World owns chunk data and CPU job queues, Renderer owns GPU resources, and PlayerPhysics owns the player body. Each frame integrates streaming results, uploads pending meshes, updates physics, updates the camera and renders ready chunks. Two generation workers and two meshing workers run CPU work; only the main thread calls OpenGL.
+Game owns SDL/OpenGL, World owns chunk metadata/data/journals/groups, Renderer owns GPU buffers, and PlayerPhysics owns the body. World maps and records are owned by the main thread. Workers receive immutable terrain and neighbor snapshots; queue/result locks only guard transfers. Two generation threads and two meshing threads perform CPU work.
 
-World hashes ChunkCoord with signed int64 X/Z. Chunk states follow Unloaded -> Queued -> Loading -> Generated -> Meshing -> Uploading -> Ready, with unloading/cancellation branches. Job version checks reject obsolete results. Edits publish copied ChunkData snapshots so workers can finish safely on the old snapshot. Neighbor changes invalidate mesh jobs and queue remeshing.
+A frame processes events, reconciles streaming/results, stages uploads within a soft 2 ms budget, publishes complete groups, updates player/camera, validates queued clicks, computes the next target, renders terrain/outline/crosshair and presents. OpenGL resources are released before context destruction.
 
-## World and edits
+## Mesh lifecycle
 
-Chunks are 16x256x16 with block Y=0..255. Terrain is Bedrock at Y=0, Stone at Y=1..61, Dirt at Y=62, Grass at Y=63 and Air above. Generation/render radii are 10/8 using Chebyshev distance; simulation radius 6 is currently a configuration constant, with no independent block tick system.
+ChunkRecord keeps activeMesh independently of job state and pendingMesh. A visible chunk remains visible through Generated/Meshing/Uploading and failures. ChunkMesh carries instanceId, revision, groupId, terrain sourceVersion and LOD. Instance IDs distinguish unload/reload; mesh revision advances for terrain, neighbor and LOD changes.
 
-Block edits are journaled in RAM. On reload, packed journal keys are decoded into X/Y/Z and applied through ChunkData::set. This preserves block indexing and Bedrock protection. Block edits and neighbor updates remesh without regenerating terrain.
+An interior edit invalidates only its chunk. A border edit includes loaded dependent cardinal neighbors. Invalidations merge intersecting groups, invalidate their previous results and capture current snapshots. Generation supplies a one-chunk border apron before meshing. Mesh failure retries up to three times while retaining active geometry.
 
-## Geometry and OpenGL
+Renderer::upload builds a separate candidate VAO/VBO/EBO, checks GL errors and stages it without destroying active resources. World::markUploaded validates the candidate token. World::readyGroups exposes only groups whose latest candidates are all acknowledged. Renderer::publish verifies every staged member, swaps all GPU meshes before the frame's draws, and World::commitGroup publishes the matching CPU meshes. Stale results cannot commit.
 
-Greedy meshing removes hidden faces against center/neighbor snapshots. The 32-bit vertex stores X in bits 0..4, Y in 5..13, Z in 14..18, material in 19..21, face in 22..24 and AO in 25..26. Vertex coordinates include 16 and 256 even though block indices stop at 15 and 255. Shader decoding matches this layout. Indices are uint32; all triangles face outward under default CCW front-face semantics.
+Old GPU meshes enter a retirement list with GL fences. Zero-timeout polling releases signaled resources without waiting. Unload discards pending resources and retires active ones; shutdown releases all lists while the context is current. No gameplay glFinish is used.
 
-LOD1 covers the complete unedited flat surface at Y=64. Edited chunks use full geometry. Distance/forward filtering, depth testing and back-face culling remain enabled. Neighbor mesh uploads are accepted even when the terrain version is unchanged.
+## Targeting and input
 
-Renderer owns VAO/VBO/EBO resources and releases them before Game deletes the current OpenGL context. A zero-sized drawable is skipped safely.
+traceVoxels uses normalized voxel DDA with deterministic X/Y/Z tie ordering. BlockTarget contains block position, entry normal, previous cell, hit distance, material, instance ID and revision. Reach is measured from the eye to the entry face and includes exactly 6 blocks.
 
-## Player physics
+World::target stops at the first solid voxel or at any unavailable/locked chunk. A chunk is targetable only when its active revision matches current data/dependencies and no update group is pending. Bedrock can be outlined but cannot be broken.
 
-PlayerPhysics stores feet position and velocity separately from Camera. Its AABB extends 0.3 blocks on each X/Z side and 1.8 blocks upward; the camera follows feet plus a 1.62-block eye offset. Gravity is 24 blocks/s², fall speed is capped at 40 blocks/s, walk speed is 5 blocks/s and grounded jumping starts at 7 blocks/s.
+Mouse events queue commands containing the previously presented BlockTarget. After movement/camera updates, validation must still match block, face, material, instance and revision; stale clicks do not retarget. Place uses the entry normal and rejects occupied, unloaded, out-of-height or player-overlapping cells.
 
-Updates use substeps no longer than 5 ms, resolving X, Z, then Y against solid voxels. Axis collision clamps displacement and clears that velocity component. Downward collision establishes grounded state; walls and ceilings do not. Spawn waits for chunk data and scans for a real support block with two air cells. Unloaded columns act as collision barriers. Placement rejects blocks overlapping the player body.
+Outline rendering expands the block slightly and builds screen-space triangle ribbons for its 12 edges. The depth-tested black pass uses no depth writes; hidden edges remain occluded. The centered white crosshair is a separate overlay. This avoids reliance on wide-line driver support.
 
-## Verification
+## Terrain and LOD
 
-CTest covers generation, meshing, negative coordinates, packed boundaries, outward normals, gravity, wall sliding, ceiling collision, jumping, support removal, frame-rate variation, high-speed landing and journal reload. Release tests keep assertions enabled.
+surfaceHeight uses positive modulo 128 before evaluating floor(64 + 10*sin(2*pi*x/128) + 6*cos(2*pi*z/128)). Generation derives world positions from integer chunk coordinates, produces continuous periodic hills, and applies RAM journals afterward. Bedrock is Y=0, Grass is Y=H, Dirt occupies H-3..H-1 and Stone fills below.
 
-With BLOXIDE_RENDER_TESTS enabled, a hidden SDL/OpenGL window reads its framebuffer and requires visible terrain pixels. Bloxide --smoke-test prints terrain pixel count, draw count, feet height and grounded state and exits nonzero if rendering fails.
+LOD1 derives a conservative heightmap from the block snapshot: interior patches up to 4x4 take maximum height while the outermost block ring stays exact. Greedy meshing emits both tops and vertical steps from this coarse occupancy. Exact border heights preserve interfaces with LOD0 and neighboring LOD1. Edited chunks force LOD0; crossing the radius-4 threshold invalidates mesh only.
 
-Profiler and BloxideBenchmark export headless CSV/JSON/trace data. These measure CPU streaming work; the game currently does not export runtime frame timings or GPU utilization.
+Packed vertices retain X/Z=16 and Y=256 using X bits 0..4, Y 5..13, Z 14..18, material 19..21, face 22..24 and AO 25..26. Triangle winding remains outward.
+
+## Physics and verification
+
+The v1.1.5 player body remains 0.6x1.8x0.6 with eye offset 1.62, gravity 24 blocks/s^2, terminal speed 40 blocks/s and grounded jump speed 7 blocks/s. Axis collision uses substeps at most 5 ms; unloaded columns remain barriers. Spawn scans actual loaded terrain.
+
+Edit collision changes immediately. The old visual snapshot is temporarily retained during mesh work, with interaction locked until group publication. This deliberate interval is measured as edit-to-publish latency.
+
+CPU tests exercise periodic terrain, exact LOD boundaries, DDA limits/occlusion, target expiration, active-mesh retention, partial upload, overlapping groups, stale tokens, instance reload and LOD transitions. The optional framebuffer test exercises visible/occluded outlines, crosshair, delayed break/place remeshing, failed-upload retry and fence collection. Benchmark CSV/JSON/trace files record CPU driver timings and publication latency, not hardware GPU utilization.

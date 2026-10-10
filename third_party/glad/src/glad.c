@@ -1,5 +1,8 @@
 #include <stddef.h>
 #include <glad/glad.h>
+GLsync (*glFenceSync)(GLenum, GLbitfield) = NULL;
+GLenum (*glClientWaitSync)(GLsync, GLbitfield, GLuint64) = NULL;
+void (*glDeleteSync)(GLsync) = NULL;
 
 GLuint (*glCreateShader)(GLenum) = NULL;
 void (*glShaderSource)(GLuint, GLsizei, const GLchar* const*, const GLint*) = NULL;
@@ -29,6 +32,7 @@ void (*glEnableVertexAttribArray)(GLuint) = NULL;
 #define LOAD(name) do { *(void **)(&name) = load(#name); if (!name) return 0; } while (0)
 int gladLoadGLLoader(GLADloadproc load) {
     if (!load) return 0;
+    LOAD(glFenceSync); LOAD(glClientWaitSync); LOAD(glDeleteSync);
     LOAD(glCreateShader); LOAD(glShaderSource); LOAD(glCompileShader); LOAD(glGetShaderiv); LOAD(glDeleteShader);
     LOAD(glCreateProgram); LOAD(glAttachShader); LOAD(glLinkProgram); LOAD(glGetProgramiv); LOAD(glDeleteProgram);
     LOAD(glUseProgram); LOAD(glGetUniformLocation); LOAD(glUniformMatrix4fv); LOAD(glUniform3f);

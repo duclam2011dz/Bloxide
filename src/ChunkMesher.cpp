@@ -27,12 +27,27 @@ std::shared_ptr<ChunkMesh> ChunkMesher::build(ChunkCoord coord,
                                                std::uint8_t lod) const {
     auto mesh = std::make_shared<ChunkMesh>();
     mesh->coord = coord;
-    mesh->lod = lod;
+    mesh->lod = center && center->edited ? 0 : lod;
     mesh->sourceVersion = center ? center->version : 0;
     if (!center) return mesh;
 
+    std::shared_ptr<const ChunkData> surface = center;
+    if (lod == 1 && !center->edited) {
+        auto coarse = std::make_shared<ChunkData>(*center);
+        // Exact one-cell perimeter; interior patches up to 4x4 use maximum height.
+        for (int x0=1;x0<15;x0+=4) for (int z0=1;z0<15;z0+=4) {
+            const int x1=std::min(15,x0+4), z1=std::min(15,z0+4);
+            int height=0;
+            for (int x=x0;x<x1;++x) for (int z=z0;z<z1;++z)
+                for (int y=255;y>height;--y) if (isSolid(center->get(x,y,z))) { height=y; break; }
+            for (int x=x0;x<x1;++x) for (int z=z0;z<z1;++z)
+                for (int y=1;y<=height;++y)
+                    coarse->blocks[coarse->index(x,y,z)] = y==height ? BlockType::Grass : (y>=height-3 ? BlockType::Dirt : BlockType::Stone);
+        }
+        surface=coarse;
+    }
     const auto get = [&](int x, int y, int z) -> BlockType {
-        if (center->inBounds(x, y, z)) return center->get(x, y, z);
+        if (surface->inBounds(x, y, z)) return surface->get(x, y, z);
         if (y < 0 || y >= ChunkData::Height) return BlockType::Air;
         if (x < 0 && neighbors.west) return neighbors.west->get(ChunkData::Width - 1, y, z);
         if (x >= ChunkData::Width && neighbors.east) return neighbors.east->get(0, y, z);
@@ -40,13 +55,6 @@ std::shared_ptr<ChunkMesh> ChunkMesher::build(ChunkCoord coord,
         if (z >= ChunkData::Depth && neighbors.south) return neighbors.south->get(x, y, 0);
         return BlockType::Air;
     };
-
-    if (lod == 1 && center->version == 1) {
-        const std::uint32_t base = 0;
-        mesh->vertices = {{packVertex(0, 64, 0, BlockType::Grass, 2, 0)}, {packVertex(16, 64, 0, BlockType::Grass, 2, 0)}, {packVertex(16, 64, 16, BlockType::Grass, 2, 0)}, {packVertex(0, 64, 16, BlockType::Grass, 2, 0)}};
-        mesh->indices = {base, base + 2, base + 1, base, base + 3, base + 2};
-        return mesh;
-    }
 
     const std::array<int, 6> uSize{16, 16, 16, 16, 16, 16};
     const std::array<int, 6> vSize{256, 256, 16, 16, 256, 256};

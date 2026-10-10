@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(Bloxide VERSION 1.1.5 LANGUAGES C CXX)
+project(Bloxide VERSION 1.2.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -27,6 +27,7 @@ add_library(bloxide_core STATIC
     src/ChunkMesher.cpp
     src/Profiler.cpp
     src/Physics.cpp
+    src/Targeting.cpp
     src/Renderer.cpp
     src/World.cpp
 )
@@ -79,6 +80,10 @@ if(BUILD_TESTING)
     add_executable(BloxideRegressionTests tests/RegressionTests.cpp)
     target_link_libraries(BloxideRegressionTests PRIVATE bloxide_core)
     add_test(NAME BloxideRegressionTests COMMAND BloxideRegressionTests)
+    add_executable(BloxideV120Tests tests/V120Tests.cpp)
+    target_link_libraries(BloxideV120Tests PRIVATE bloxide_core)
+    add_test(NAME BloxideV120Tests COMMAND BloxideV120Tests)
+    set_tests_properties(BloxideV120Tests PROPERTIES TIMEOUT 90)
     set_tests_properties(BloxideRegressionTests PROPERTIES TIMEOUT 45)
     if(BLOXIDE_RENDER_TESTS)
         add_test(NAME BloxideRenderRegression COMMAND Bloxide --smoke-test)

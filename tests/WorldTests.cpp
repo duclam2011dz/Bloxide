@@ -12,9 +12,10 @@ int main() {
     const auto chunk = generator.generate({-1, 2});
     assert(chunk->get(0, 0, 0) == BlockType::Bedrock);
     assert(chunk->get(0, 1, 0) == BlockType::Stone);
-    assert(chunk->get(0, 62, 0) == BlockType::Dirt);
-    assert(chunk->get(0, 63, 0) == BlockType::Grass);
-    assert(chunk->get(0, 64, 0) == BlockType::Air);
+    const int height=ChunkGenerator::surfaceHeight(-16,32);
+    assert(chunk->get(0, height-1, 0) == BlockType::Dirt);
+    assert(chunk->get(0, height, 0) == BlockType::Grass);
+    assert(chunk->get(0, height+1, 0) == BlockType::Air);
     assert(!chunk->set(0, 0, 0, BlockType::Air));
     assert(chunk->set(0, 64, 0, BlockType::Stone));
     ChunkMesher mesher;
@@ -22,6 +23,6 @@ int main() {
     assert(mesh->sourceVersion == chunk->version);
     assert(!mesh->vertices.empty() && !mesh->indices.empty());
     const auto lod = mesher.build({0, 0}, generator.generate({0,0}), {}, 1);
-    assert(lod->vertices.size() == 4 && lod->indices.size() == 6);
+    assert(!lod->vertices.empty() && !lod->indices.empty());
     return 0;
 }

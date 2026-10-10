@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.2.0] - 2026-10-11
+
+- Kept active CPU/GPU meshes visible throughout remeshing; added pending buffers and atomic update-group publication.
+- Added instance/revision/group validation, overlapping-group merging, failed-upload retry and nonblocking fence retirement.
+- Limited main-thread uploads to a soft 2 ms/frame budget; cleaned up unloaded GPU resources.
+- Added shared DDA targeting at reach 6, black depth-tested outline and centered crosshair.
+- Queued clicks against the previously presented target; blocked stale/locked targets, occupied placement and player overlap.
+- Generated deterministic periodic hills without noise or seed, with three Dirt layers and protected Bedrock.
+- Replaced flat LOD with coarse heightmaps, exact perimeter rings and full meshes for edited chunks.
+- Added terrain/target/lifecycle regressions and delayed break/place framebuffer tests including outline occlusion.
+- Added v1.2 CSV/JSON/trace benchmark output and updated specs/performance evidence.
+
 ## [1.1.5] - 2026-10-11
 
 - Fixed sky-only rendering: packed vertex boundaries no longer wrap and horizontal face winding matches back-face culling.

@@ -38,6 +38,7 @@ struct ChunkData {
     static constexpr std::size_t Volume = static_cast<std::size_t>(Width) * Height * Depth;
     std::array<BlockType, Volume> blocks{};
     std::uint64_t version = 0;
+    bool edited = false;
     [[nodiscard]] bool inBounds(int x, int y, int z) const noexcept;
     [[nodiscard]] BlockType get(int x, int y, int z) const noexcept;
     bool set(int x, int y, int z, BlockType value) noexcept;
@@ -52,6 +53,9 @@ struct ChunkMesh {
     std::vector<std::uint32_t> indices;
     std::uint8_t lod = 0;
     std::uint64_t sourceVersion = 0;
+    std::uint64_t instanceId = 0;
+    std::uint64_t revision = 0;
+    std::uint64_t groupId = 0;
     std::size_t byteSize() const noexcept { return vertices.size() * sizeof(ChunkMeshVertex) + indices.size() * sizeof(std::uint32_t); }
 };
 
@@ -59,7 +63,12 @@ struct ChunkRecord {
     explicit ChunkRecord(ChunkCoord value) : coord(value) {}
     ChunkCoord coord;
     std::shared_ptr<ChunkData> data;
-    std::shared_ptr<ChunkMesh> mesh;
+    std::shared_ptr<ChunkMesh> pendingMesh;
+    std::shared_ptr<ChunkMesh> activeMesh;
+    std::uint64_t instanceId = 0;
+    std::uint64_t groupId = 0;
+    bool uploaded = false;
+    std::uint8_t desiredLod = 0;
     std::atomic<ChunkState> state{ChunkState::Unloaded};
     std::atomic<unsigned char> dirty{static_cast<unsigned char>(ChunkDirty::Terrain) | static_cast<unsigned char>(ChunkDirty::Mesh)};
     std::atomic<std::uint64_t> version{0};

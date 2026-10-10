@@ -41,10 +41,9 @@ void geometry() {
     ChunkGenerator generator;
     auto flat=generator.generate({});
     auto lod=mesher.build({},flat,{},1);
-    check(lod->vertices.size()==4,"flat LOD quad");
-    check(decode(lod->vertices[0])[1]==64,"LOD surface height");
-    flat->set(8,63,8,BlockType::Air);
-    check(mesher.build({},flat,{},1)->vertices.size()>4,"LOD preserves edits");
+    check(lod->vertices.size()>4,"heightmap LOD geometry");
+    flat->set(8,ChunkGenerator::surfaceHeight(8,8),8,BlockType::Air);
+    check(mesher.build({},flat,{},1)->vertices.size()==mesher.build({},flat,{},0)->vertices.size(),"LOD preserves edits");
 }
 void physics() {
     PlayerPhysics p;
@@ -83,7 +82,8 @@ void streaming() {
         auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(15);
         while(std::chrono::steady_clock::now()<deadline) {
             world.update({8,65.62f,8},{0,0,-1});
-            for(auto u:world.takePendingUploads()) world.markUploaded(u.coord,u.mesh->sourceVersion);
+            for(auto u:world.takePendingUploads()) world.markUploaded(u);
+            for(auto g:world.readyGroups()) world.commitGroup(g);
             if(predicate()) return;
             std::this_thread::sleep_for(std::chrono::milliseconds(2));
         }
@@ -91,17 +91,18 @@ void streaming() {
     };
     wait([&]{return world.columnLoaded(8,8) && !world.renderChunks({8,65.62f,8},{0,0,-1}).empty();});
     check(!world.set(8,0,8,BlockType::Air),"Bedrock protected");
-    check(world.set(8,63,8,BlockType::Air),"dig support");
-    check(world.get(8,63,8)==BlockType::Air,"collision sees edit");
-    PlayerPhysics p; p.feet={8.5f,64,8.5f};
+    const int h=ChunkGenerator::surfaceHeight(8,8);
+    check(world.set(8,h,8,BlockType::Air),"dig support");
+    check(world.get(8,h,8)==BlockType::Air,"collision sees edit");
+    PlayerPhysics p; p.feet={8.5f,static_cast<float>(h+1),8.5f};
     for(int i=0;i<120;++i) p.step(1.0f/120,0,0,false,[&](int x,int y,int z){return isSolid(world.get(x,y,z));});
-    check(near(p.feet[1],63) && p.grounded,"player falls to next real block");
+    check(near(p.feet[1],static_cast<float>(h)) && p.grounded,"player falls to next real block");
     wait([&]{return !world.renderChunks({8,65.62f,8},{0,0,-1}).empty();});
     // Cross the unload radius, then reload and verify the journal preserves the hole.
     world.update({400,65.62f,400},{0,0,-1});
     check(!world.columnLoaded(8,8),"spawn chunk unloaded");
     wait([&]{return world.columnLoaded(8,8);});
-    check(world.get(8,63,8)==BlockType::Air && world.get(8,62,8)==BlockType::Dirt,
+    check(world.get(8,h,8)==BlockType::Air && world.get(8,h-1,8)==BlockType::Dirt,
           "journal restores correct block after reload");
 }
 int main() {
