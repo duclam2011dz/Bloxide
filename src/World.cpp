@@ -83,7 +83,12 @@ void World::applyJournal(const ChunkCoord& coord, ChunkData& data) {
     std::scoped_lock lock(mapMutex_);
     const auto it = edits_.find(coord);
     if (it == edits_.end()) return;
-    for (const auto& [key, block] : it->second) data.blocks[key] = block;
+    for (const auto& [key, block] : it->second) {
+        const int x = key & 15U;
+        const int y = (key >> 4U) & 255U;
+        const int z = (key >> 12U) & 15U;
+        data.set(x, y, z, block);
+    }
 }
 
 void World::pumpResults() {
@@ -100,6 +105,7 @@ void World::pumpResults() {
         result.record->data = std::move(result.data);
         result.record->state = ChunkState::Generated;
         result.record->dirty = static_cast<unsigned char>(ChunkDirty::Mesh);
+        markNeighborMeshes(result.coord);
         ++stats_.generated;
     }
     for (auto& result : meshed) {
@@ -115,7 +121,11 @@ void World::markNeighborMeshes(const ChunkCoord& coord) {
     std::scoped_lock lock(mapMutex_);
     for (const auto& neighbor : neighbors) {
         const auto it = chunks_.find(neighbor);
-        if (it != chunks_.end() && it->second->state == ChunkState::Ready) { it->second->state = ChunkState::Generated; it->second->dirty = static_cast<unsigned char>(ChunkDirty::Neighbor) | static_cast<unsigned char>(ChunkDirty::Mesh); }
+        if (it != chunks_.end() && it->second->data) {
+            it->second->version.fetch_add(1);
+            it->second->state = ChunkState::Generated;
+            it->second->dirty = static_cast<unsigned char>(ChunkDirty::Neighbor) | static_cast<unsigned char>(ChunkDirty::Mesh);
+        }
     }
 }
 
@@ -230,11 +240,21 @@ bool World::set(int worldX, int y, int worldZ, BlockType block) {
     if (!record || !record->data || (get(worldX, y, worldZ) == BlockType::Bedrock && block == BlockType::Air)) return false;
     const int x = floorMod(worldX, 16), z = floorMod(worldZ, 16);
     if (!isBreakable(get(worldX, y, worldZ)) && block == BlockType::Air) return false;
-    if (!record->data->set(x, y, z, block)) return false;
+    // Workers keep immutable snapshots. Publish an edited copy instead of mutating them.
+    auto edited = std::make_shared<ChunkData>(*record->data);
+    if (!edited->set(x, y, z, block)) return false;
+    record->data = std::move(edited);
+    record->version.fetch_add(1);
     { std::scoped_lock lock(mapMutex_); edits_[coord][editKey(x, y, z)] = block; }
     record->state = ChunkState::Generated;
     record->dirty = static_cast<unsigned char>(ChunkDirty::Terrain) | static_cast<unsigned char>(ChunkDirty::Mesh);
+    markNeighborMeshes(coord);
     return true;
+}
+
+bool World::columnLoaded(int x, int z) const {
+    const auto record = find(worldToChunk(static_cast<float>(x), static_cast<float>(z)));
+    return record && record->data && !record->cancelRequested;
 }
 
 RaycastHit World::raycast(const std::array<float, 3>& origin, const std::array<float, 3>& direction, float maxDistance) const noexcept {

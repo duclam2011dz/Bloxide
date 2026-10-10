@@ -22,8 +22,14 @@ unsigned int compileShader(unsigned int type, const std::string& source) {
 }
 
 Renderer::~Renderer() {
+    shutdown();
+}
+
+void Renderer::shutdown() {
     for (auto& [coord, mesh] : meshes_) { (void)coord; destroy(mesh); }
     if (program_ != 0) glDeleteProgram(program_);
+    meshes_.clear();
+    program_ = 0;
 }
 
 void Renderer::destroy(GpuMesh& mesh) {
@@ -51,7 +57,7 @@ bool Renderer::initialize(const std::string& vertexShaderPath, const std::string
 bool Renderer::upload(const ChunkUpload& upload) {
     if (!upload.mesh) return false;
     auto& mesh = meshes_[upload.coord];
-    if (mesh.version >= upload.mesh->sourceVersion && mesh.vao != 0) return false;
+    // Remeshing neighbors/LOD can produce new geometry without a terrain edit.
     destroy(mesh);
     glGenVertexArrays(1, &mesh.vao); glGenBuffers(1, &mesh.vbo); glGenBuffers(1, &mesh.ebo);
     glBindVertexArray(mesh.vao);
@@ -69,6 +75,7 @@ bool Renderer::upload(const ChunkUpload& upload) {
 }
 
 void Renderer::render(const Camera& camera, const std::vector<RenderChunk>& chunks, int width, int height) {
+    if (width <= 0 || height <= 0) return;
     glViewport(0, 0, width, height);
     glClearColor(0.48f, 0.73f, 0.92f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);

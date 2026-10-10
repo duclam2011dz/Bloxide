@@ -1,6 +1,29 @@
 # Bloxide
 
-Bloxide is a C++17 voxel prototype using SDL2 and OpenGL 3.3 Core. Version 1.1 adds an infinite flat world streamed in 16x256x16 chunks.
+Bloxide is a C++17 voxel prototype using SDL2 and OpenGL 3.3 Core. Version 1.1.5 fixes terrain rendering and introduces block-based player physics in the streamed 16x256x16 world.
+
+## v1.1.5 bug fixes and physics
+
+- Terrain vertices retain chunk boundaries X/Z=16 and Y=256; top/bottom faces use outward winding with back-face culling.
+- Player uses a 0.6x1.8x0.6 AABB, eye offset 1.62, gravity 24 blocks/s², terminal speed 40 blocks/s and ground-only jump speed 7 blocks/s.
+- Collision resolves all three axes against solid blocks with substeps of at most 5 ms, including walls, ceilings, corners and chunk seams.
+- Spawn waits for chunk data and finds the actual supporting surface. Unloaded columns block movement until generation completes.
+- Digging underneath the player causes falling; placed blocks cannot intersect the player.
+- F3 shows chunk/draw counters, player feet Y and grounded state in the window title.
+
+## Regression checks
+
+Default CTest covers physics, meshing, block edits and unload/reload. Assertions remain enabled in Release tests.
+On a machine with a working OpenGL driver, enable the framebuffer check:
+
+```powershell
+cmake -S . -B build-cmake -DBLOXIDE_RENDER_TESTS=ON
+cmake --build build-cmake --parallel 4
+ctest --test-dir build-cmake --output-on-failure
+build-cmake/Bloxide.exe --smoke-test
+```
+
+The hidden-window smoke test reads the framebuffer and fails if terrain pixels do not appear. It also prints draw calls, feet height and grounded state.
 
 ## v1.1 features
 
@@ -40,7 +63,7 @@ build-cmake/BloxideBenchmark.exe
 build-cmake/BloxideBenchmark.exe --quick
 ```
 
-Results are written under `build/benchmark`: `v1.1-runtime.csv`, `v1.1-summary.json`, `v1.1-trace.json` and `v1.1-metrics.txt`. The runtime game writes the same profiler formats after exit. Press `F3` in a future HUD-enabled build to display runtime counters; the current window title reports the active chunk/draw counters when the HUD is enabled in source.
+Benchmark results are written under `build/benchmark`: `v1.1-runtime.csv`, `v1.1-summary.json`, `v1.1-trace.json` and `v1.1-metrics.txt`. These are headless streaming measurements; the game does not export runtime timing files. F3 displays gameplay diagnostics in the window title.
 
 ## Controls
 

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(Bloxide VERSION 1.1.0 LANGUAGES C CXX)
+project(Bloxide VERSION 1.1.5 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -26,6 +26,7 @@ add_library(bloxide_core STATIC
     src/ChunkGenerator.cpp
     src/ChunkMesher.cpp
     src/Profiler.cpp
+    src/Physics.cpp
     src/Renderer.cpp
     src/World.cpp
 )
@@ -66,6 +67,7 @@ if(WIN32)
 endif()
 
 include(CTest)
+option(BLOXIDE_RENDER_TESTS "Run SDL/OpenGL framebuffer regression test (requires GPU driver)" OFF)
 if(BUILD_TESTING)
     add_executable(BloxideWorldTests
         tests/WorldTests.cpp
@@ -74,4 +76,17 @@ if(BUILD_TESTING)
     target_link_libraries(BloxideWorldTests PRIVATE bloxide_core)
     add_test(NAME BloxideWorldTests COMMAND BloxideWorldTests)
     add_test(NAME BloxideBenchmarkSmoke COMMAND BloxideBenchmark --quick)
+    add_executable(BloxideRegressionTests tests/RegressionTests.cpp)
+    target_link_libraries(BloxideRegressionTests PRIVATE bloxide_core)
+    add_test(NAME BloxideRegressionTests COMMAND BloxideRegressionTests)
+    set_tests_properties(BloxideRegressionTests PROPERTIES TIMEOUT 45)
+    if(BLOXIDE_RENDER_TESTS)
+        add_test(NAME BloxideRenderRegression COMMAND Bloxide --smoke-test)
+        set_tests_properties(BloxideRenderRegression PROPERTIES TIMEOUT 90)
+    endif()
+    if(MSVC)
+        target_compile_options(BloxideWorldTests PRIVATE /UNDEBUG)
+    else()
+        target_compile_options(BloxideWorldTests PRIVATE -UNDEBUG)
+    endif()
 endif()

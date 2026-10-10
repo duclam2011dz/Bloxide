@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.1.5] - 2026-10-11
+
+- Fixed sky-only rendering: packed vertex boundaries no longer wrap and horizontal face winding matches back-face culling.
+- Aligned flat LOD surfaces at Y=64 and preserved edited terrain through full-detail meshes.
+- Replaced fixed-height physics with gravity, player AABB, wall sliding, ceiling/floor collisions, bounded substeps and grounded jumps.
+- Spawn now waits for terrain and finds a real support block; unloaded columns are collision barriers.
+- Prevented placing blocks inside the player.
+- Fixed remesh upload rejection, neighbor invalidation, edit snapshot ownership and journal indexing after reload.
+- Destroyed GPU resources before deleting the SDL OpenGL context; handled minimized windows safely.
+- Added physics/geometry/streaming regressions, opt-in framebuffer regression and Release-enabled assertions.
+- Updated project specs and F3 diagnostics.
+
 ## [1.1.0] - 2026-09-28
 
 - Replaced the fixed v1.0 world with infinite signed chunk coordinates.

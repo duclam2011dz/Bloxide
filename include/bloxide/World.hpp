@@ -47,6 +47,7 @@ public:
 
     [[nodiscard]] BlockType get(int worldX, int y, int worldZ) const;
     bool set(int worldX, int y, int worldZ, BlockType block);
+    bool columnLoaded(int worldX, int worldZ) const;
     [[nodiscard]] RaycastHit raycast(const std::array<float, 3>& origin,
                                       const std::array<float, 3>& direction,
                                       float maxDistance) const noexcept;

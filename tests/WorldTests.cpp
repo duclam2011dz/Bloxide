@@ -21,7 +21,7 @@ int main() {
     const auto mesh = mesher.build({0, 0}, chunk, {}, 0);
     assert(mesh->sourceVersion == chunk->version);
     assert(!mesh->vertices.empty() && !mesh->indices.empty());
-    const auto lod = mesher.build({0, 0}, chunk, {}, 1);
+    const auto lod = mesher.build({0, 0}, generator.generate({0,0}), {}, 1);
     assert(lod->vertices.size() == 4 && lod->indices.size() == 6);
     return 0;
 }

@@ -19,6 +19,7 @@ public:
 
     bool initialize(const std::string& vertexShaderPath, const std::string& fragmentShaderPath);
     bool upload(const ChunkUpload& upload);
+    void shutdown();
     void render(const Camera& camera, const std::vector<RenderChunk>& chunks, int width, int height);
     [[nodiscard]] std::size_t drawCalls() const noexcept { return drawCalls_; }
     [[nodiscard]] std::size_t uploadedBytes() const noexcept { return uploadedBytes_; }

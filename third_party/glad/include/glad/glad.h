@@ -34,6 +34,8 @@ typedef ptrdiff_t GLsizeiptr;
 #define GL_STATIC_DRAW 0x88E4
 #define GL_FLOAT 0x1406
 #define GL_UNSIGNED_INT 0x1405
+#define GL_UNSIGNED_BYTE 0x1401
+#define GL_RGB 0x1907
 #define GL_TRIANGLES 0x0004
 #define GL_VERTEX_SHADER 0x8B31
 #define GL_FRAGMENT_SHADER 0x8B30
@@ -48,6 +50,7 @@ void glClear(GLbitfield);
 void glEnable(GLenum);
 void glViewport(GLint, GLint, GLsizei, GLsizei);
 void glCullFace(GLenum);
+void glReadPixels(GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, void*);
 void glDrawElements(GLenum, GLsizei, GLenum, const void*);
 extern GLuint (*glCreateShader)(GLenum);
 extern void (*glShaderSource)(GLuint, GLsizei, const GLchar* const*, const GLint*);

@@ -10,12 +10,13 @@ namespace {
 struct Cell { BlockType block = BlockType::Air; std::uint8_t ao = 0; };
 
 std::uint32_t packVertex(int x, int y, int z, BlockType block, int face, int ao) {
-    return (static_cast<std::uint32_t>(x) & 0xFU) |
-           ((static_cast<std::uint32_t>(y) & 0xFFU) << 4U) |
-           ((static_cast<std::uint32_t>(z) & 0xFU) << 12U) |
-           ((static_cast<std::uint32_t>(block) & 0x7U) << 16U) |
-           ((static_cast<std::uint32_t>(face) & 0x7U) << 19U) |
-           ((static_cast<std::uint32_t>(ao) & 0x3U) << 22U);
+    // Vertices include the far boundaries: X/Z=16 and Y=256.
+    return (static_cast<std::uint32_t>(x) & 31U) |
+           ((static_cast<std::uint32_t>(y) & 511U) << 5U) |
+           ((static_cast<std::uint32_t>(z) & 31U) << 14U) |
+           ((static_cast<std::uint32_t>(block) & 7U) << 19U) |
+           ((static_cast<std::uint32_t>(face) & 7U) << 22U) |
+           ((static_cast<std::uint32_t>(ao) & 3U) << 25U);
 }
 
 } // namespace
@@ -40,10 +41,10 @@ std::shared_ptr<ChunkMesh> ChunkMesher::build(ChunkCoord coord,
         return BlockType::Air;
     };
 
-    if (lod == 1) {
+    if (lod == 1 && center->version == 1) {
         const std::uint32_t base = 0;
-        mesh->vertices = {{packVertex(0, 63, 0, BlockType::Grass, 2, 0)}, {packVertex(15, 63, 0, BlockType::Grass, 2, 0)}, {packVertex(15, 63, 15, BlockType::Grass, 2, 0)}, {packVertex(0, 63, 15, BlockType::Grass, 2, 0)}};
-        mesh->indices = {base, base + 1, base + 2, base, base + 2, base + 3};
+        mesh->vertices = {{packVertex(0, 64, 0, BlockType::Grass, 2, 0)}, {packVertex(16, 64, 0, BlockType::Grass, 2, 0)}, {packVertex(16, 64, 16, BlockType::Grass, 2, 0)}, {packVertex(0, 64, 16, BlockType::Grass, 2, 0)}};
+        mesh->indices = {base, base + 2, base + 1, base, base + 3, base + 2};
         return mesh;
     }
 
@@ -97,7 +98,10 @@ std::shared_ptr<ChunkMesh> ChunkMesher::build(ChunkCoord coord,
                 if (face == 5) positions = {{{u, v, slice + 1}, {u1, v, slice + 1}, {u1, v1, slice + 1}, {u, v1, slice + 1}}};
                 const std::uint32_t base = static_cast<std::uint32_t>(mesh->vertices.size());
                 for (const auto& p : positions) mesh->vertices.push_back({packVertex(p[0], p[1], p[2], cell.block, face, cell.ao)});
-                mesh->indices.insert(mesh->indices.end(), {base, base + 1, base + 2, base, base + 2, base + 3});
+                if (face == 2 || face == 3)
+                    mesh->indices.insert(mesh->indices.end(), {base, base + 2, base + 1, base, base + 3, base + 2});
+                else
+                    mesh->indices.insert(mesh->indices.end(), {base, base + 1, base + 2, base, base + 2, base + 3});
                 for (int clearV = 0; clearV < height; ++clearV) for (int clearU = 0; clearU < width; ++clearU) mask[static_cast<std::size_t>((v + clearV) * uSize[face] + u + clearU)].block = BlockType::Air;
             }
         }

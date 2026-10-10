@@ -1,5 +1,11 @@
 # Bloxide v1.1.0 performance report
 
+## v1.1.5 correctness validation — 2026-10-11
+
+This patch targets correctness rather than new performance optimization. Debug and Release CTest each passed all four tests with the optional OpenGL framebuffer check enabled. A direct framebuffer smoke run detected 653,702 green terrain pixels and 39 draw calls; player feet were Y=64 with grounded=1. Counts depend on asynchronous streaming and are not performance thresholds.
+
+The previous process-liveness smoke check did not verify visible geometry. The new regression checks vertex boundaries, outward triangle normals, collision outcomes and actual framebuffer content. The older headless timings below measure streaming scheduling; they do not establish runtime FPS or GPU performance.
+
 ## Method
 
 The benchmark was run on 2026-09-28 using the local Windows/MSYS2 UCRT64 GCC 16.1 toolchain. `BloxideBenchmark` uses four scenarios: cold stream, steady-state, traversal and edit/remesh positions. It records frame and generation phase timings in CSV and writes a JSON summary plus Chrome trace.
