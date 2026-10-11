@@ -6,6 +6,7 @@ void (*glGenerateMipmap)(GLenum) = NULL;
 void (*glActiveTexture)(GLenum) = NULL;
 void (*glUniform1i)(GLint,GLint) = NULL;
 void (*glUniform1ui)(GLint,GLuint) = NULL;
+void (*glUniform2ui)(GLint,GLuint,GLuint) = NULL;
 GLsync (*glFenceSync)(GLenum, GLbitfield) = NULL;
 GLenum (*glClientWaitSync)(GLsync, GLbitfield, GLuint64) = NULL;
 void (*glDeleteSync)(GLsync) = NULL;
@@ -40,6 +41,7 @@ int gladLoadGLLoader(GLADloadproc load) {
     if (!load) return 0;
     LOAD(glTexImage3D); LOAD(glTexSubImage3D); LOAD(glGenerateMipmap);
     LOAD(glActiveTexture); LOAD(glUniform1i); LOAD(glUniform1ui);
+    LOAD(glUniform2ui);
     LOAD(glFenceSync); LOAD(glClientWaitSync); LOAD(glDeleteSync);
     LOAD(glCreateShader); LOAD(glShaderSource); LOAD(glCompileShader); LOAD(glGetShaderiv); LOAD(glDeleteShader);
     LOAD(glCreateProgram); LOAD(glAttachShader); LOAD(glLinkProgram); LOAD(glGetProgramiv); LOAD(glDeleteProgram);

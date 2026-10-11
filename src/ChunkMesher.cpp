@@ -31,25 +31,12 @@ std::shared_ptr<ChunkMesh> ChunkMesher::build(ChunkCoord coord,
                                                std::uint8_t lod) const {
     auto mesh = std::make_shared<ChunkMesh>();
     mesh->coord = coord;
-    mesh->lod = center && center->edited ? 0 : lod;
+    mesh->lod = 0;
+    (void)lod; // Full occupancy meshes preserve natural cave mouths at every distance.
     mesh->sourceVersion = center ? center->version : 0;
     if (!center) return mesh;
 
     std::shared_ptr<const ChunkData> surface = center;
-    if (lod == 1 && !center->edited) {
-        auto coarse = std::make_shared<ChunkData>(*center);
-        // Exact one-cell perimeter; interior patches up to 4x4 use maximum height.
-        for (int x0=1;x0<15;x0+=4) for (int z0=1;z0<15;z0+=4) {
-            const int x1=std::min(15,x0+4), z1=std::min(15,z0+4);
-            int height=0;
-            for (int x=x0;x<x1;++x) for (int z=z0;z<z1;++z)
-                for (int y=255;y>height;--y) if (isSolid(center->get(x,y,z))) { height=y; break; }
-            for (int x=x0;x<x1;++x) for (int z=z0;z<z1;++z)
-                for (int y=1;y<=height;++y)
-                    coarse->blocks[coarse->index(x,y,z)] = y==height ? BlockType::Grass : (y>=height-3 ? BlockType::Dirt : BlockType::Stone);
-        }
-        surface=coarse;
-    }
     const auto get = [&](int x, int y, int z) -> BlockType {
         if (surface->inBounds(x, y, z)) return surface->get(x, y, z);
         if (y < 0 || y >= ChunkData::Height) return BlockType::Air;

@@ -38,7 +38,8 @@ void geometry() {
         const auto face=(mesh->vertices[mesh->indices[i]].packed>>24U)&7U;
         check(n[0]*normals[face][0]+n[1]*normals[face][1]+n[2]*normals[face][2]>0,"outward CCW winding");
     }
-    ChunkGenerator generator;
+    WorldSettings settings;settings.caveThreshold=0.99999;
+    ChunkGenerator generator(settings);
     auto flat=generator.generate({});
     auto lod=mesher.build({},flat,{},1);
     check(lod->vertices.size()>4,"heightmap LOD geometry");
@@ -63,21 +64,22 @@ void physics() {
     const auto ceiling=[](int,int y,int){return y<=0 || y==3;};
     p.step(0.1f,0,0,true,ceiling);
     check(p.feet[1]+PlayerPhysics::Height<=3.001f && p.velocity[1]<=0,"head collision");
-    p.feet={0.5f,2,0.5f}; p.velocity={}; p.grounded=true;
+    p.origin={};p.feet={0.5f,2,0.5f}; p.velocity={}; p.grounded=true;
     p.step(0.1f,0,0,false,floor);
     check(p.feet[1]<2,"removed support causes fall");
-    p.feet={0.5f,10,0.5f}; p.velocity={0,-40,0};
+    p.origin={};p.feet={0.5f,10,0.5f}; p.velocity={0,-40,0};
     p.step(0.25f,0,0,false,floor);
     check(near(p.feet[1],1),"long frame cannot tunnel floor");
     check(p.overlapsBlock(0,1,0) && !p.overlapsBlock(0,0,0),"placement overlap");
     for (float dt : {1.0f/30,1.0f/60,1.0f/144}) {
-        p.feet={-16.1f,5,-0.1f}; p.velocity={}; p.grounded=false;
+        p.origin={};p.feet={-16.1f,5,-0.1f}; p.velocity={}; p.grounded=false;
         for (int i=0;i<300;++i) p.step(dt,0,0,false,floor);
         check(near(p.feet[1],1) && p.grounded,"stable grounding at different frame rates");
     }
 }
 void streaming() {
-    World world;
+    WorldSettings settings;settings.caveThreshold=0.99999;
+    World world(settings);
     const auto wait=[&](auto predicate) {
         auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(15);
         while(std::chrono::steady_clock::now()<deadline) {

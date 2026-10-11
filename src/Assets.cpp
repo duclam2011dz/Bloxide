@@ -15,8 +15,10 @@ unsigned textureBaseLayer(BlockType b,int face) {
     default:return 0;
     }
 }
-std::uint32_t textureVariant(int x,int y,int z,unsigned base,std::uint32_t seed){
-    std::uint32_t h=std::uint32_t(x)*73856093U^std::uint32_t(y)*19349663U^std::uint32_t(z)*83492791U^base*2654435761U^seed;
+std::uint32_t textureVariant(std::int64_t x,int y,std::int64_t z,unsigned base,std::uint32_t seed){
+    auto ux=static_cast<std::uint64_t>(x),uz=static_cast<std::uint64_t>(z);
+    std::uint32_t h=std::uint32_t(ux)*73856093U^std::uint32_t(ux>>32)*0x52dce729U
+                   ^std::uint32_t(y)*19349663U^std::uint32_t(uz)*83492791U^std::uint32_t(uz>>32)*0x38495ab5U^base*2654435761U^seed;
     h^=h>>16U;h*=0x7feb352dU;h^=h>>15U;h*=0x846ca68bU;h^=h>>16U;
     return h&3U;
 }

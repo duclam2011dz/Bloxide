@@ -6,16 +6,13 @@
 #include <stdexcept>
 namespace bloxide {
 namespace {
-ChunkCoord coordOf(int x,int z) {
-    auto div=[](int v){return v/16-(v%16<0);};
-    return {div(x),div(z)};
-}
+ChunkCoord coordOf(std::int64_t x,std::int64_t z){return blockToChunk(x,z);}
 int distance(ChunkCoord a,ChunkCoord b) {
     return static_cast<int>(std::min<std::int64_t>(1000000,std::max(std::llabs(a.x-b.x),std::llabs(a.z-b.z))));
 }
 std::array<ChunkCoord,4> adjacent(ChunkCoord c) { return {{{c.x-1,c.z},{c.x+1,c.z},{c.x,c.z-1},{c.x,c.z+1}}}; }
 }
-World::World() {
+World::World(const WorldSettings& settings):generator_(settings) {
     for(int i=0;i<2;++i) generationThreads_.emplace_back(&World::generationLoop,this);
     for(int i=0;i<2;++i) meshingThreads_.emplace_back(&World::meshingLoop,this);
 }
@@ -144,7 +141,11 @@ void World::pumpResults() {
     }
 }
 void World::update(const std::array<float,3>& p,const std::array<float,3>& dir) {
-    pumpResults();playerChunk_=worldToChunk(p[0],p[2]);viewDirection_=dir;
+    updateAt(WorldPosition::fromAbsolute(p[0],p[1],p[2]),dir);
+}
+void World::updateAt(const WorldPosition& position,const std::array<float,3>& dir){
+    auto checked=position;checked.normalize();
+    pumpResults();playerChunk_=checked.chunk;viewDirection_=dir;
     for(int z=-10;z<=10;++z)for(int x=-10;x<=10;++x) {
         ChunkCoord c{playerChunk_.x+x,playerChunk_.z+z};
         scheduleGeneration(c,priorityFor(c,playerChunk_,dir));
@@ -164,7 +165,7 @@ void World::update(const std::array<float,3>& p,const std::array<float,3>& dir) 
     }
     std::vector<ChunkCoord> lodChanges;
     for(auto& [c,r]:chunks_)if(r->data) {
-        auto lod=static_cast<std::uint8_t>(!r->data->edited&&distance(c,playerChunk_)>4);
+        auto lod=std::uint8_t{0};
         if(lod!=r->desiredLod){r->desiredLod=lod;if(r->activeMesh||r->groupId)lodChanges.push_back(c);}
     }
     if(!lodChanges.empty())invalidateGroup(lodChanges);
@@ -206,7 +207,10 @@ bool World::commitGroup(const UploadGroup& g) {
     ++stats_.swaps;groups_.erase(it);return true;
 }
 std::vector<RenderChunk> World::renderChunks(const std::array<float,3>& p,const std::array<float,3>& dir)const {
-    std::vector<RenderChunk> out;auto center=worldToChunk(p[0],p[2]);
+    return renderChunksAt(WorldPosition::fromAbsolute(p[0],p[1],p[2]),dir);
+}
+std::vector<RenderChunk> World::renderChunksAt(const WorldPosition& p,const std::array<float,3>& dir)const {
+    auto checked=p;checked.normalize();std::vector<RenderChunk> out;auto center=checked.chunk;
     for(auto& [c,r]:chunks_) {
         if(!r->activeMesh||r->cancelRequested||distance(c,center)>8)continue;
         float dx=static_cast<float>(c.x-center.x),dz=static_cast<float>(c.z-center.z),len=std::sqrt(dx*dx+dz*dz);
@@ -216,14 +220,17 @@ std::vector<RenderChunk> World::renderChunks(const std::array<float,3>& p,const 
     stats_.visible=out.size();return out;
 }
 std::vector<ChunkCoord> World::loadedCoords()const {std::vector<ChunkCoord> out;for(auto& [c,r]:chunks_)out.push_back(c);return out;}
-BlockType World::get(int x,int y,int z)const {auto r=find(coordOf(x,z));return r&&r->data?r->data->get(floorMod(x,16),y,floorMod(z,16)):BlockType::Air;}
-bool World::columnLoaded(int x,int z)const {auto r=find(coordOf(x,z));return r&&r->data&&!r->cancelRequested;}
-bool World::targetable(int x,int z)const {auto r=find(coordOf(x,z));return r&&r->data&&r->activeMesh&&r->groupId==0&&r->activeMesh->revision==r->version&&!r->cancelRequested;}
-bool World::set(int x,int y,int z,BlockType b) {
+BlockType World::get(std::int64_t x,int y,std::int64_t z)const {auto r=find(coordOf(x,z));return r&&r->data?r->data->get(blockLocal(x),y,blockLocal(z)):BlockType::Air;}
+bool World::columnLoaded(std::int64_t x,std::int64_t z)const {
+    if(x<-WorldLimit||x>=WorldLimit||z<-WorldLimit||z>=WorldLimit)return false;
+    auto r=find(coordOf(x,z));return r&&r->data&&!r->cancelRequested;
+}
+bool World::targetable(std::int64_t x,std::int64_t z)const {auto r=find(coordOf(x,z));return columnLoaded(x,z)&&r&&r->activeMesh&&r->groupId==0&&r->activeMesh->revision==r->version&&!r->cancelRequested;}
+bool World::set(std::int64_t x,int y,std::int64_t z,BlockType b) {
     auto c=coordOf(x,z);auto r=find(c);
-    if(!r||!r->data||y<=0||y>=256||get(x,y,z)==BlockType::Bedrock||get(x,y,z)==b)return false;
+    if(!columnLoaded(x,z)||!r||!r->data||y<=0||y>=256||get(x,y,z)==BlockType::Bedrock||get(x,y,z)==b)return false;
     auto data=std::make_shared<ChunkData>(*r->data);
-    int lx=floorMod(x,16),lz=floorMod(z,16);
+    int lx=blockLocal(x),lz=blockLocal(z);
     if(!data->set(lx,y,lz,b))return false;
     r->data=data;r->desiredLod=0;
     edits_[c][lx|(y<<4)|(lz<<12)]=b;
@@ -235,19 +242,25 @@ bool World::set(int x,int y,int z,BlockType b) {
     invalidateGroup(affected,true);return true;
 }
 BlockTarget World::target(const std::array<float,3>& o,const std::array<float,3>& d,float reach)const {
-    return traceVoxels(o,d,reach,[&](int x,int y,int z){
+    return targetAt(WorldPosition::fromAbsolute(o[0],o[1],o[2]),d,reach);
+}
+BlockTarget World::targetAt(const WorldPosition& o,const std::array<float,3>& d,float reach)const {
+    return traceWorldVoxels(o,d,reach,[&](std::int64_t x,int y,std::int64_t z){
         auto r=find(coordOf(x,z));
         if(!targetable(x,z))return TargetVoxel{BlockType::Air,true,0,0};
         return TargetVoxel{get(x,y,z),false,r->instanceId,r->version};
     });
 }
 bool World::validateTarget(const BlockTarget& old,const std::array<float,3>& o,const std::array<float,3>& d)const {
+    return validateTargetAt(old,WorldPosition::fromAbsolute(o[0],o[1],o[2]),d);
+}
+bool World::validateTargetAt(const BlockTarget& old,const WorldPosition& o,const std::array<float,3>& d)const {
     if(!old.hit)return false;
-    auto now=target(o,d,6);
+    auto now=targetAt(o,d,6);
     return now.hit&&now.block==old.block&&now.normal==old.normal&&now.type==old.type&&now.instanceId==old.instanceId&&now.revision==old.revision;
 }
 RaycastHit World::raycast(const std::array<float,3>& o,const std::array<float,3>& d,float reach)const {
-    return traceVoxels(o,d,reach,[&](int x,int y,int z){return TargetVoxel{get(x,y,z),!columnLoaded(x,z),0,0};});
+    return traceVoxels(o,d,reach,[&](std::int64_t x,int y,std::int64_t z){return TargetVoxel{get(x,y,z),!columnLoaded(x,z),0,0};});
 }
 WorldStats World::stats()const {std::lock_guard lock(statsMutex_);auto s=stats_;s.ready=0;s.vertices=0;s.indices=0;for(auto&[c,r]:chunks_)if(r->activeMesh){++s.ready;s.vertices+=r->activeMesh->vertices.size();s.indices+=r->activeMesh->indices.size();}return s;}
 }

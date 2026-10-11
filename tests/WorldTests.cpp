@@ -8,7 +8,8 @@ int main() {
     assert(ChunkData::Width == 16 && ChunkData::Height == 256 && ChunkData::Depth == 16);
     const ChunkCoord negative = worldToChunk(-0.1f, -16.1f); assert(negative.x == -1 && negative.z == -2);
     assert(worldToLocal(-0.1f) == 15);
-    ChunkGenerator generator;
+    WorldSettings settings;settings.caveThreshold=0.99999;
+    ChunkGenerator generator(settings);
     const auto chunk = generator.generate({-1, 2});
     assert(chunk->get(0, 0, 0) == BlockType::Bedrock);
     assert(chunk->get(0, 1, 0) == BlockType::Stone);

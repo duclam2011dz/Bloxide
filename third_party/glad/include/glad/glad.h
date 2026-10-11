@@ -91,6 +91,7 @@ extern void (*glGenerateMipmap)(GLenum);
 extern void (*glActiveTexture)(GLenum);
 extern void (*glUniform1i)(GLint,GLint);
 extern void (*glUniform1ui)(GLint,GLuint);
+extern void (*glUniform2ui)(GLint,GLuint,GLuint);
 extern GLsync (*glFenceSync)(GLenum, GLbitfield);
 extern GLenum (*glClientWaitSync)(GLsync, GLbitfield, GLuint64);
 extern void (*glDeleteSync)(GLsync);

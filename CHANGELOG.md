@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.3.0] - 2026-10-11
+
+- Fixed side-contact upward snapping with swept face collision, constrained displacement and separate overlap recovery.
+- Added int64 chunk/local-double player positions, floating camera/render origin and int64 targeting within +/-2^40 blocks.
+- Preserved texture variants through rebasing with high/low 32-bit shader coordinate hashing.
+- Added uint64 seeds, SplitMix64 derivation, stable signed coordinate hashing and immutable seeded simplex 2D/3D fields.
+- Added normalized fBm, billow, turbulence, ridged feedback, domain warps and footprint-aware octave filtering.
+- Replaced periodic terrain with seeded mountains/valleys and cached 3D caves that can reach the surface.
+- Used full meshes throughout render distance to preserve cave mouths.
+- Added CLI world selection/seed input, random-once default seed and atomically written metadata; edits remain RAM-only.
+- Added noise/generator goldens, allocation/reproducibility tests, metadata regressions and render tests near both world limits.
+- Added noise/generation/meshing benchmark and updated specs/performance evidence.
+
 ## [1.2.5] - 2026-10-11
 
 - Added substepped ground/air acceleration, material friction, momentum-preserving jumping and weak air drag.

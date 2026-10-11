@@ -1,5 +1,47 @@
 # Bloxide performance and validation
 
+## v1.3.0 - 2026-10-11
+
+Environment: Windows, MSYS2 UCRT64 GCC 16.1, Intel Core i5-6400 @ 2.70 GHz (4 cores/4 threads), NVIDIA GeForce GT 720, driver 27.21.14.6192. Measurements are local observations, not portable performance guarantees.
+
+### Correctness and reproducibility
+
+Final Debug CTest passed 10/10 in 27.72 s; Release passed 10/10 in 10.62 s. These include six-face swept collision, the side-penetration/no-lift regression, overlap recovery, floating-origin targeting, metadata validation, caves, and OpenGL regressions near both gameplay limits. Separate processes, reversed chunk order and different worker schedules produced identical block hashes for seeds 0, 130 and 18446744073709551615. Debug and Release probe outputs also matched exactly.
+
+Simplex golden values use tight numerical tolerances; seed-130 chunk (0,0) has pinned block digest 2061680697937486093 for simplex-1. Allocation instrumentation observed zero allocations during valid noise sampling. The normalization grid observed noise values from -0.996569 to 0.997312. A 25-chunk seed-130 scan found 23,963 carved cave blocks and 156 surface openings. These are fixture results, not global terrain statistics.
+
+### Release headless benchmark
+
+Run BloxideNoiseBenchmark from the build directory; CSV output is build/benchmark/v1.3-noise.csv (ignored by Git). Sampling uses one million samples. Generation/meshing averages below use four sampled chunks. Streaming uses the production worker pipeline with simulated upload acknowledgments and 2 ms driver pacing.
+
+| Metric | Observed value |
+|---|---:|
+| Simplex 2D | 43.0282 ns/sample |
+| Simplex 3D | 66.0126 ns/sample |
+| fBm, footprint 1 | 261.157 ns/sample |
+| fBm, footprint 4 | 182.168 ns/sample |
+| fBm, footprint 16 | 93.162 ns/sample |
+| Generation average | 1.02522 ms/chunk |
+| Meshing average | 4.72717 ms/chunk |
+| Four sampled mesh payloads | 116,120 bytes |
+| Cold stream, 441 generated / 289 active | 644.520 ms |
+| Traversal settle | 171.885 ms |
+| Edit to publish | 15.5233 ms |
+| Maximum driver iteration | 34.4539 ms |
+| Loaded chunks after traversal | 483 |
+| Active CPU mesh payload | 8,416,680 bytes |
+| Stale results in this run | 0 |
+
+483 block arrays alone occupy 31,653,888 bytes. This excludes map/pool overhead, pending snapshots, worker caches, retired resources and GPU storage; the mesh value likewise measures payload, not process RSS. Headless timings are not FPS, GPU time or hardware utilization. Cold/traversal timings include scheduling and polling, not only noise evaluation. Earlier flat/periodic-world reports below are historical references, not equivalent workloads for a speedup claim.
+
+### OpenGL and visual regression
+
+Final Release fixtures at X/Z offsets +1099511627648 and -1099511627648 rendered 289 draws and approximately 921,600 terrain pixels. Old meshes remained visible for all 15 deliberately delayed remesh frames. Group publication counted 291 swaps and zero stale results; edit-to-publish was 126.506 / 125.764 ms. The fixture intentionally injects an 80 ms worker delay, framebuffer readbacks and screenshots; its maximum diagnostic frame times (278.048 / 259.013 ms) are not normal gameplay frame performance.
+
+Texture loading measured 5.5209 / 5.6748 ms and texture upload CPU submission 0.136 / 0.162 ms in those runs. This is not GPU completion time. The near/far captures were reviewed for terrain, material mapping and retained texture detail; the fixtures also check outline occlusion and stable high/low-word texture hashing after rebasing.
+
+Gameplay is restricted to +/-2^40 blocks. Metadata persists seed/configuration/version only; edits remain RAM-only. Full meshes replace heightmap LOD to preserve cave mouths, so cave-heavy workloads may cost more memory and meshing time. No claim is made about vendor fragment/geometry utilization.
+
 ## v1.2.5 - 2026-10-11
 
 Debug and Release each passed 6/6 tests, including the optional OpenGL framebuffer regression. The v1.2.5 asset/physics test and framebuffer test additionally passed three consecutive Release repetitions.

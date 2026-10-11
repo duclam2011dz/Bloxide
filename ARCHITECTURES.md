@@ -1,59 +1,47 @@
-# Bloxide architecture - v1.2.5
+# Bloxide architecture - v1.3.0
 
-## Ownership and frame order
+## Coordinate and collision contracts
 
-Game owns SDL/OpenGL, World owns chunk metadata/data/journals/groups, Renderer owns GPU buffers, and PlayerPhysics owns the body. World maps and records are owned by the main thread. Workers receive immutable terrain and neighbor snapshots; queue/result locks only guard transfers. Two generation threads and two meshing threads perform CPU work.
+WorldPosition is chunk X/Z int64 plus local X/Z double in [0,16), with Y double. Block positions and raycast targets use int64 X/Z and integer Y. Gameplay spans +/-2^40 blocks; block cells are [-2^40,2^40). Checked normalization and conversions prevent signed overflow and nonfinite input.
 
-A frame processes events, reconciles streaming/results, stages uploads within a soft 2 ms budget, publishes complete groups, updates player/camera, validates queued clicks, computes the next target, renders terrain/outline/crosshair and presents. OpenGL resources are released before context destruction.
+PlayerPhysics keeps a local-double AABB and an origin chunk. Queries translate local voxel indices to absolute int64 block coordinates. Swept collision examines forward faces intersecting the swept interval, requiring strict overlap in the other axes. Allowed displacement stays between zero and requested delta. X/Z never modify Y; only downward contact sets grounded. Overlap recovery is separate, tries six directions and uses the nearest clear displacement with fixed ties. The old solver could choose a positive Y displacement while falling after tiny side penetration; a 2e-5 overlap fixture locks down that regression.
 
-## Mesh lifecycle
+Camera matrices and chunk/outline coordinates are relative to the player origin. Rebase changes the representation, not physical position, velocity or target. The far plane is 384 blocks to accommodate tall terrain across render radius 8. Shader texture hashing receives low/high uint32 words for absolute chunk-block X/Z and performs signed local additions without requiring OpenGL int64 support.
 
-ChunkRecord keeps activeMesh independently of job state and pendingMesh. A visible chunk remains visible through Generated/Meshing/Uploading and failures. ChunkMesh carries instanceId, revision, groupId, terrain sourceVersion and LOD. Instance IDs distinguish unload/reload; mesh revision advances for terrain, neighbor and LOD changes.
+## Seed and simplex context
 
-An interior edit invalidates only its chunk. A border edit includes loaded dependent cardinal neighbors. Invalidations merge intersecting groups, invalidate their previous results and capture current snapshots. Generation supplies a one-chunk border apron before meshing. Mesh failure retries up to three times while retaining active geometry.
+WorldSettings validates seed/configuration before a World constructs its workers. The ChunkGenerator holds immutable settings and ten noise fields. SplitMix64 derives domains for continental, ridges, hills, turbulence, warp X/Z, cave density, cave warp X/Y/Z and reserved structures/vegetation.
 
-Renderer::upload builds a separate candidate VAO/VBO/EBO, checks GL errors and stages it without destroying active resources. World::markUploaded validates the candidate token. World::readyGroups exposes only groups whose latest candidates are all acknowledged. Renderer::publish verifies every staged member, swaps all GPU meshes before the frame's draws, and World::commitGroup publishes the matching CPU meshes. Stale results cannot commit.
+Each simplex field seeds Fisher-Yates with unbiased bounded SplitMix64 output once. Sampling hashes full signed int64 lattice coordinates with unsigned arithmetic and uses the permutation table for gradient selection. It does not rely on coordinate modulo 256 for field repetition.
 
-Old GPU meshes enter a retirement list with GL fences. Zero-timeout polling releases signaled resources without waiting. Unload discards pending resources and retires active ones; shutdown releases all lists while the context is current. No gameplay glFinish is used.
+2D uses skew/unskew and three corners; 3D selects a tetrahedron and four corners. Fixed normalized gradient tables and max(0,t)^4 contributions are scaled by 99 (2D) and 45 (3D), clamped to [-1,1]. Finite sample inputs are limited to +/-2^44 before lattice conversion. Valid sample calls allocate no memory.
 
-## Targeting and input
+FractalSettings provides octaves, frequency, lacunarity and gain. FractalNoise supports normalized fBm, billow, turbulence, ridged feedback and 2D/3D warps. Frequencies above 0.5/footprint are omitted, and retained amplitude weights are renormalized. Core floating-point contraction/fast-math is disabled to support exact block reproducibility across Debug/Release on the supported toolchain.
 
-traceVoxels uses normalized voxel DDA with deterministic X/Y/Z tie ordering. BlockTarget contains block position, entry normal, previous cell, hit distance, material, instance ID and revision. Reach is measured from the eye to the entry face and includes exactly 6 blocks.
+## Terrain and metadata
 
-World::target stops at the first solid voxel or at any unavailable/locked chunk. A chunk is targetable only when its active revision matches current data/dependencies and no update group is pending. Bedrock can be outlined but cannot be broken.
+The simplex-1 generator uses mountains-v1: surface warp 1024/3 octaves, strength 64; continental 1536/5, ridge 512/5, billow 384/4 and turbulence 256/3. Height is floor(clamp(64+72*continental+58*ridge+12*billow-10*turbulence,24,192)). Default lacunarity/gain are 2/0.5.
 
-Mouse events queue commands containing the previously presented BlockTarget. After movement/camera updates, validation must still match block, face, material, instance and revision; stale clicks do not retarget. Place uses the entry normal and rejects occupied, unloaded, out-of-height or player-overlapping cells.
+Generation builds 256 column heights once, fills Bedrock/Stone/three Dirt layers/Grass and leaves Air above. Caves use a 4x4x4 world-aligned density cache with required boundary nodes and trilinear interpolation. Warp is 96/3 octaves and strength 12; density is 48/4 with threshold 0.38, filtered at footprint 4. Y=0..3 is protected, and caves may carve the surface. Cache allocation happens per job, not per noise sample.
 
-Outline rendering expands the block slightly and builds screen-space triangle ribbons for its 12 edges. The depth-tested black pass uses no depth writes; hidden edges remain occluded. The centered white crosshair is a separate overlay. This avoids reliance on wide-line driver support.
+Full occupancy meshes replace heightmap LOD throughout radius 8. No distance-dependent terrain regeneration or cave-mouth masking occurs. Structures/vegetation domains are reserved only.
 
-## Terrain and LOD
+CLI --world/--seed opens world.meta or creates it once. Normal default storage comes from SDL_GetPrefPath; smoke tests use distinct executable-local fixture directories. Metadata text schema 1 stores uint64 seed, generator version, preset, all seven fractal configs and warp/threshold values. Classic locale and max_digits10 preserve numeric round trips. Save uses a same-directory temporary file and atomic replacement; unknown versions, invalid config, extra/duplicate keys and seed conflicts are errors. No edit journal is saved to disk.
 
-surfaceHeight uses positive modulo 128 before evaluating floor(64 + 10*sin(2*pi*x/128) + 6*cos(2*pi*z/128)). Generation derives world positions from integer chunk coordinates, produces continuous periodic hills, and applies RAM journals afterward. Bedrock is Y=0, Grass is Y=H, Dirt occupies H-3..H-1 and Stone fills below.
+## Streaming, rendering and textures
 
-LOD1 derives a conservative heightmap from the block snapshot: interior patches up to 4x4 take maximum height while the outermost block ring stays exact. Greedy meshing emits both tops and vertical steps from this coarse occupancy. Exact border heights preserve interfaces with LOD0 and neighboring LOD1. Edited chunks force LOD0; crossing the radius-4 threshold invalidates mesh only.
+World maps, journals, records and update groups are owned by the main thread. Two generation and two meshing workers consume immutable snapshots through short queue/result locks. Chunk instance/revision/group tokens reject obsolete results.
 
-Packed vertices retain X/Z=16 and Y=256 using X bits 0..4, Y 5..13, Z 14..18, base-layer 19..23, face 24..26 and AO 27..28. Triangle winding remains outward. Base-layer replaces the old material field but keeps the vertex at 4 bytes.
+Active meshes remain independent of pending job state. Border edits merge affected groups; separate GPU buffers upload within a soft 2 ms budget, then complete groups publish before drawing. Old buffers retire through zero-timeout fence polling. Collision sees edits immediately while targeting is locked until publication.
 
-## Procedural assets and Texture Array
+Voxel DDA uses local-double traversal with absolute int64 targets and reach 6. Queued clicks validate the previously presented block, face, material and revision. Placement rejects overlap with the player. Black outline uses depth-tested triangle ribbons, and the crosshair is a separate overlay.
 
-BloxideTextureGenerator is an explicit C++ CLI. It combines periodic value noise, domain-warped four-octave fBM, toroidal cellular distances, gravel/crack/blade masks and Bayer 4x4 dithering into material-specific 8-12-color palettes. Seeded interior variations blend into a shared border. Grass side has a directional grass-to-dirt mask; all other material tiles wrap both axes.
+The 20-layer RGBA8 Texture Array and strict 32x32 PNG loader remain. Packed vertices use X bits 0..4, Y 5..13, Z 14..18, base-layer 19..23, face 24..26 and AO 27..28. Greedy keys exclude per-block variants; UV repeats at block scale. Texture seed 125 remains independent of world seed, and absolute-coordinate hashing survives rebasing.
 
-The generator writes 20 opaque RGBA8 PNGs with LodePNG auto_convert disabled, a manifest, an enlarged contact sheet and mixed-variant 3x3 previews. The manifest schema is BLOXIDE_TEXTURES / version 1 / width / height / layer count / uint32 seed / generator version, followed by layer/group/variant/filename entries. Loader checks uniqueness, mapping and all 20 entries, inspects the original PNG color format, validates 32x32 RGBA8 before decoding and rejects nonopaque pixels. Decoding is bounded. LodePNG sources and license are pinned in third_party/lodepng/UPSTREAM.md.
+## Verification
 
-Runtime assets and shaders are refreshed into the executable directory on every build. SDL_GetBasePath resolves the runtime root. Startup reports bad assets and stops; there is no silent placeholder or runtime generation.
+Noise goldens, generator byte digests, numerical guards and an allocation-count test lock down simplex-1. Separate processes compare chunk order and threading for seeds 0, 130 and uint64 max; Debug/Release hashes are also compared exactly on the supported compiler. Cave interpolation is tested across positive/negative chunk boundaries.
 
-Array base layers are Grass top 0, Grass side 4, Dirt 8, Stone 12 and Bedrock 16. Each group has four consecutive variants. Greedy merge keys use base-layer, face and AO, not variant or original block type. Grass bottom can merge with Dirt when the remaining key matches.
+Physics regressions cover six faces, epsilon contacts, side-overlap recovery, chunk seams, negative coordinates and world limits. Metadata tests cover round trips, random-once reopening, conflicts, unsupported versions and failed atomic writes. OpenGL tests validate layers/UV/AO, rebased texture hashing and terrain/interaction near both world limits.
 
-Renderer uploads GL_RGBA8 layers into GL_TEXTURE_2D_ARRAY with GL_REPEAT, GL_NEAREST magnification and GL_NEAREST_MIPMAP_LINEAR minification. It generates six mip levels (32 down to 1). The vertex shader decodes flat uint base-layer/face attributes and computes unwrapped block-space UV. The fragment shader uses an inward face offset to identify the owning voxel, hashes signed world coordinates/base-layer/texture seed to choose a variant and samples with textureGrad using continuous UV derivatives. AO modulates texture color; outline/crosshair remain separate passes.
-
-The texture object is released while the GL context is current. The array payload is 81,920 bytes at level zero and 109,200 bytes including mipmaps, excluding driver overhead.
-
-## Physics and verification
-
-The v1.1.5 player body remains 0.6x1.8x0.6 with eye offset 1.62, gravity 24 blocks/s^2, terminal speed 40 blocks/s and grounded jump speed 7 blocks/s. Axis collision uses substeps at most 5 ms; unloaded columns remain barriers. Spawn scans actual loaded terrain.
-
-PhysicsSettings supplies speed, accelerations, drag and material friction. Horizontal velocity approaches the requested direction with a vector acceleration limit of 45 blocks/s^2 grounded or 12 airborne. Grounded zero-input braking uses exp(-coefficient*dt), choosing the maximum coefficient among actual supporting blocks: Grass 14, Dirt 12, Bedrock 11, Stone 9 s^-1. Air drag is 0.15 s^-1; zero-input horizontal speed below 0.01 is snapped to zero on ground. These operations run in the collision substeps. Input normalization prevents diagonal speed gain, and collisions clear only the blocked velocity axis.
-
-Edit collision changes immediately. The old visual snapshot is temporarily retained during mesh work, with interaction locked until group publication. This deliberate interval is measured as edit-to-publish latency.
-
-CPU tests exercise periodic terrain, exact LOD boundaries, DDA limits/occlusion, target expiration, active-mesh retention, partial upload, overlapping groups, stale tokens, instance reload and LOD transitions. The optional framebuffer test exercises visible/occluded outlines, crosshair, delayed break/place remeshing, failed-upload retry and fence collection. Benchmark CSV/JSON/trace files record CPU driver timings and publication latency, not hardware GPU utilization.
+BloxideNoiseBenchmark records sample throughput, generation/meshing, cold/traversal completion, memory payload, driver spikes and edit publication. Headless upload acknowledgement is simulated; these timings are not gameplay FPS or GPU utilization.

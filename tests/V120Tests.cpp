@@ -9,11 +9,12 @@
 using namespace bloxide;
 void require(bool v,const char* msg){if(!v)throw std::runtime_error(msg);}
 void terrain() {
-    ChunkGenerator gen;
+    WorldSettings settings;settings.caveThreshold=0.99999;
+    ChunkGenerator gen(settings);
     for(int x=-140;x<140;x+=7)for(int z=-140;z<140;z+=9){
         int h=gen.surfaceHeight(x,z);
-        require(h>=48&&h<=80,"height bounds");
-        require(h==gen.surfaceHeight(x+128,z)&&h==gen.surfaceHeight(x,z-128),"terrain period");
+        require(h>=24&&h<=192,"height bounds");
+        require(h==gen.heightAt(x,z),"deterministic height");
     }
     for(ChunkCoord c:std::vector<ChunkCoord>{{-1,-1},{0,0},{1,1}}){
         auto data=gen.generate(c);
@@ -60,7 +61,8 @@ void targeting() {
     require(corner.hit&&corner.previous==Int3{1,1,0}&&corner.normal==Int3{0,0,-1},"deterministic corner crossing");
 }
 void lifecycle() {
-    World world;std::array<float,3> position{8,80,8};
+    WorldSettings settings;settings.caveThreshold=0.99999;
+    World world(settings);std::array<float,3> position{8,128,8};
     auto tick=[&](bool uploads=true){
         world.update(position,{0,0,-1});
         if(uploads){
@@ -114,9 +116,9 @@ void lifecycle() {
     require(meshFor({0,0})!=old0&&meshFor({1,0})!=old1,"atomic group swap");
     require(world.get(15,h,8)==BlockType::Air,"new collision data");
     world.setMeshDelayForTests(0);
-    wait([&]{return meshFor({5,0})&&meshFor({5,0})->lod==1;});
+    wait([&]{return meshFor({5,0})&&meshFor({5,0})->lod==0;});
     auto lod=meshFor({5,0});position={88,80,8};tick(false);
-    require(meshFor({5,0})==lod,"LOD keeps active until replacement");
+    require(meshFor({5,0})==lod,"full cave mesh remains active across distance changes");
     wait([&]{return meshFor({5,0})&&meshFor({5,0})->lod==0&&world.targetable(88,8);});
     auto initialInstance=meshFor({0,0})->instanceId;
     position={600,80,600};tick(false);

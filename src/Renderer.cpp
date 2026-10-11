@@ -132,7 +132,7 @@ bool Renderer::validateTexturesForTests() const {
     bool correct=true;
     bool reported=false;
     std::vector<unsigned char> rendered(256*128*4);
-    for(int offset:{0,-16})for(int face=0;face<6;++face)for(unsigned base:{0U,4U,8U,12U,16U})for(unsigned ao:{0U,3U}){
+    for(std::int64_t offset:std::array<std::int64_t,4>{0,-16,WorldLimit-32,-WorldLimit+32})for(int face=0;face<6;++face)for(unsigned base:{0U,4U,8U,12U,16U})for(unsigned ao:{0U,3U}){
         std::array<std::array<int,3>,4> positions{};
         std::array<float,16> view{};
         if(face<2){
@@ -145,17 +145,18 @@ bool Renderer::validateTexturesForTests() const {
             positions={{{0,0,0},{8,0,0},{8,4,0},{0,4,0}}};
             view={0.25f,0,0,0,0,0.5f,0,0,0,0,0,0,-1,-1,0,1};
         }
-        view[12]-=(view[0]+view[8])*offset;
-        view[13]-=(view[1]+view[9])*offset;
         std::array<ChunkMeshVertex,4> vertices{};
         for(int i=0;i<4;++i)vertices[i].packed=positions[i][0]|(positions[i][1]<<5)|(positions[i][2]<<14)|(base<<19)|(unsigned(face)<<24)|(ao<<27);
         glBindBuffer(GL_ARRAY_BUFFER,fixture.vbo);glBufferData(GL_ARRAY_BUFFER,sizeof(vertices),vertices.data(),GL_STATIC_DRAW);
         glUniformMatrix4fv(glGetUniformLocation(program_,"uView"),1,GL_FALSE,view.data());
-        glUniform3f(glGetUniformLocation(program_,"uChunkOrigin"),float(offset),0,float(offset));
+        glUniform3f(glGetUniformLocation(program_,"uChunkOrigin"),0,0,0);
+        auto bits=static_cast<std::uint64_t>(offset);
+        glUniform2ui(glGetUniformLocation(program_,"uChunkBlockX"),static_cast<GLuint>(bits),static_cast<GLuint>(bits>>32));
+        glUniform2ui(glGetUniformLocation(program_,"uChunkBlockZ"),static_cast<GLuint>(bits),static_cast<GLuint>(bits>>32));
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);glDrawElements(GL_TRIANGLES,6,GL_UNSIGNED_INT,nullptr);
         glReadPixels(0,0,256,128,GL_RGBA,GL_UNSIGNED_BYTE,rendered.data());
         for(int py=7;py<128;py+=13)for(int px=7;px<256;px+=13){
-            int x=0,y=0,z=0,tx=px%32,ty=31-py%32;
+            std::int64_t x=0,z=0;int y=0,tx=px%32,ty=31-py%32;
             if(face<2){x=offset-(face==1);y=py/32;z=offset+px/32;if(face==1)tx=31-tx;}
             else if(face<4){x=offset+px/32;y=face==2?-1:0;z=offset+3-py/32;if(face==3)ty=py%32;}
             else {x=offset+px/32;y=py/32;z=offset-(face==5);if(face==4)tx=31-tx;}
@@ -219,7 +220,10 @@ void Renderer::render(const Camera& camera,const std::vector<RenderChunk>& chunk
     for(auto& c:chunks){
         auto it=meshes_.find(c.coord);
         if(it==meshes_.end()||it->second.indexCount==0||it->second.instanceId!=c.mesh->instanceId||it->second.revision!=c.mesh->revision)continue;
-        glUniform3f(glGetUniformLocation(program_,"uChunkOrigin"),static_cast<float>(c.coord.x*16),0,static_cast<float>(c.coord.z*16));
+        glUniform3f(glGetUniformLocation(program_,"uChunkOrigin"),static_cast<float>((c.coord.x-camera.origin().x)*16),0,static_cast<float>((c.coord.z-camera.origin().z)*16));
+        auto bx=static_cast<std::uint64_t>(c.coord.x*16),bz=static_cast<std::uint64_t>(c.coord.z*16);
+        glUniform2ui(glGetUniformLocation(program_,"uChunkBlockX"),static_cast<GLuint>(bx),static_cast<GLuint>(bx>>32));
+        glUniform2ui(glGetUniformLocation(program_,"uChunkBlockZ"),static_cast<GLuint>(bz),static_cast<GLuint>(bz>>32));
         glBindVertexArray(it->second.vao);glDrawElements(GL_TRIANGLES,it->second.indexCount,GL_UNSIGNED_INT,nullptr);++drawCalls_;
     }
 }
@@ -232,7 +236,7 @@ void Renderer::renderTarget(const Camera& camera,const BlockTarget& target,int w
         auto view=camera.viewMatrix(),proj=camera.projectionMatrix(static_cast<float>(w)/h);
         std::array<Clip,8> corners{};
         for(int i=0;i<8;++i){
-            Clip pos{target.block.x+((i&1)?1.002f:-0.002f),target.block.y+((i&2)?1.002f:-0.002f),target.block.z+((i&4)?1.002f:-0.002f),1};
+            Clip pos{static_cast<float>(target.block.x-camera.origin().x*16)+((i&1)?1.002f:-0.002f),target.block.y+((i&2)?1.002f:-0.002f),static_cast<float>(target.block.z-camera.origin().z*16)+((i&4)?1.002f:-0.002f),1};
             corners[i]=transform(proj,transform(view,pos));
         }
         for(int i=0;i<8;++i)for(int bit:{1,2,4})if(!(i&bit))ribbon(vertices,corners[i],corners[i|bit],w,h,1.5f);

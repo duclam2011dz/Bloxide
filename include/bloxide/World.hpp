@@ -23,23 +23,29 @@ struct WorldStats {
 class World {
 public:
     static constexpr int GenerationDistance=10,SimulationDistance=6,RenderDistance=8;
-    World();
+    explicit World(const WorldSettings& settings={});
     ~World();
     World(const World&)=delete;
     World& operator=(const World&)=delete;
     void update(const std::array<float,3>& position,const std::array<float,3>& direction);
+    void updateAt(const WorldPosition& position,const std::array<float,3>& direction);
     std::vector<ChunkUpload> takePendingUploads();
     bool markUploaded(const ChunkUpload& upload);
     std::vector<UploadGroup> readyGroups() const;
     bool commitGroup(const UploadGroup& group);
     std::vector<RenderChunk> renderChunks(const std::array<float,3>& position,const std::array<float,3>& direction) const;
+    std::vector<RenderChunk> renderChunksAt(const WorldPosition& position,const std::array<float,3>& direction)const;
     std::vector<ChunkCoord> loadedCoords() const;
-    BlockType get(int x,int y,int z) const;
-    bool set(int x,int y,int z,BlockType block);
-    bool columnLoaded(int x,int z) const;
-    bool targetable(int x,int z) const;
+    BlockType get(std::int64_t x,int y,std::int64_t z)const;
+    bool set(std::int64_t x,int y,std::int64_t z,BlockType block);
+    bool columnLoaded(std::int64_t x,std::int64_t z)const;
+    bool targetable(std::int64_t x,std::int64_t z)const;
+    int surfaceHeight(std::int64_t x,std::int64_t z)const{return generator_.heightAt(x,z);}
+    const WorldSettings& settings()const{return generator_.settings();}
     BlockTarget target(const std::array<float,3>& origin,const std::array<float,3>& direction,float reach=6) const;
+    BlockTarget targetAt(const WorldPosition& origin,const std::array<float,3>& direction,float reach=6)const;
     bool validateTarget(const BlockTarget& presented,const std::array<float,3>& origin,const std::array<float,3>& direction) const;
+    bool validateTargetAt(const BlockTarget& presented,const WorldPosition& origin,const std::array<float,3>& direction)const;
     RaycastHit raycast(const std::array<float,3>& origin,const std::array<float,3>& direction,float reach) const;
     WorldStats stats() const;
     void setMeshDelayForTests(int ms) { meshDelayMs_=ms; }

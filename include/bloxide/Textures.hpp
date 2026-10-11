@@ -15,7 +15,7 @@ struct TextureImage {
 constexpr unsigned TextureSize=32,TextureLayers=20,TextureVariants=4;
 inline constexpr std::array<const char*,5> TextureGroups{"grass_top","grass_side","dirt","stone","bedrock"};
 unsigned textureBaseLayer(BlockType block,int face);
-std::uint32_t textureVariant(int x,int y,int z,unsigned baseLayer,std::uint32_t seed);
+std::uint32_t textureVariant(std::int64_t x,int y,std::int64_t z,unsigned baseLayer,std::uint32_t seed);
 struct TextureAssets {
     std::array<TextureImage,TextureLayers> layers;
     std::uint32_t seed=125;

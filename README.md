@@ -1,6 +1,20 @@
 # Bloxide
 
-Bloxide v1.2.5 is a C++17 voxel game prototype using SDL2 and OpenGL 3.3 Core.
+Bloxide v1.3.0 is a C++17 voxel game prototype using SDL2 and OpenGL 3.3 Core.
+
+## v1.3.0 world seeds and collision
+
+Swept AABB collision blocks all six faces without converting downward motion into an upward displacement. Horizontal movement never changes Y; existing overlaps are handled separately by the nearest valid recovery along six directions.
+
+World generation now uses a uint64 seed, independently derived simplex fields, warped fractal mountains and 3D caves with natural entrances. Player position is chunk-int64 plus local-double; rendering is rebased to the player chunk. Supported gameplay coordinates are within +/-2^40 blocks. Texture variants remain anchored to absolute world coordinates.
+
+```powershell
+./build-cmake/Bloxide.exe --world ./worlds/demo --seed 130
+./build-cmake/Bloxide.exe --world ./worlds/demo
+./build-cmake/Bloxide.exe --help
+```
+
+A new world without --seed chooses a random seed once. The default world lives under the user directory supplied by SDL_GetPrefPath, outside build output. world.meta stores seed, generator_version=simplex-1, preset and complete noise configuration. Reopening uses this metadata; conflicting --seed, malformed metadata or unsupported versions are rejected. Only metadata persists: block edits still live in RAM and are lost when the game exits.
 
 ## v1.2.5 physics and textures
 
@@ -35,15 +49,17 @@ Texture filtering is nearest up close with nearest mip samples blended between l
 
 ## Terrain
 
-For positive modulo x/z in 0..127:
+The mountains-v1 preset combines independently seeded fields:
 
 ```text
-H = floor(64 + 10*sin(2*pi*x/128) + 6*cos(2*pi*z/128))
+H = floor(clamp(64 + 72*continental + 58*ridge + 12*billow - 10*turbulence, 24, 192))
 ```
 
-Height ranges approximately 48..80 and repeats every 128 blocks on each axis. There is no noise, seed or randomness. Each column contains Bedrock at Y=0, Stone at Y=1..H-4, three Dirt layers, Grass at Y=H and Air above.
+Continental fBm uses scale 1536/5 octaves, ridges 512/5, billow 384/4 and turbulence 256/3. A 2D warp uses scale 1024/3 octaves and strength 64. Lacunarity is 2 and gain 0.5. Each column starts as Bedrock at Y=0, Stone at Y=1..H-4, three Dirt layers, Grass at Y=H and Air above.
 
-LOD0 covers chunk radius 4. LOD1 at radius 5..8 uses maximum-height interior patches up to 4x4 while preserving a one-block exact perimeter. Vertical step faces close the coarse geometry. Edited chunks use full geometry; LOD transitions use the same swapping pipeline.
+Warped 3D fBm caves are sampled on a world-aligned 4-block grid and trilinearly interpolated. Cave warp is scale 96/3 octaves, strength 12; density is scale 48/4 octaves with threshold 0.38. Nyquist filtering omits density's highest octave at footprint 4. Carving starts at Y=4 and can intersect the surface. Bedrock and Y=1..3 remain protected during generation.
+
+Full occupancy meshes are used throughout render radius 8 so cave entrances are not covered by heightmap LOD. Streaming, greedy meshing and mesh swapping remain active.
 
 ## Build and run
 
@@ -64,7 +80,7 @@ Click validates the outlined target from the previously presented frame. Changed
 
 ## Tests and benchmark
 
-The CPU suite covers terrain periodicity/layers, DDA targeting, acceleration/material friction, PNG validation, procedural palette/seam checks, journal reload, mesh revisions, overlapping group swaps and LOD transitions. Assertions remain enabled in Release tests.
+The CPU suite covers seeded terrain/layers/caves, 2D/3D noise goldens and no-allocation sampling, metadata round trips, DDA targeting, six-face collision, material friction, PNG validation, journal reload, atomic swaps and floating origin. Assertions remain enabled in Release tests. Reproducibility compares sequential/reversed/threaded generation across separate processes.
 
 ```powershell
 cmake -S . -B build-cmake -DBLOXIDE_RENDER_TESTS=ON
@@ -77,5 +93,12 @@ ctest --test-dir build-cmake --output-on-failure
 The optional hidden-window OpenGL test checks every texture layer and mip dimension, then compares repeated shader samples on large quads for six faces, signed coordinates and AO. It also checks terrain/outline pixels, outline occlusion, crosshair, delayed remesh, failed-upload retry and retired buffers. Near/far review PNGs are saved in the executable's diagnostics directory during the test.
 
 The benchmark writes build/benchmark/v1.2-streaming.csv, v1.2-summary.json and v1.2-trace.json. It measures CPU driver work and edit-to-publish latency with simulated upload acknowledgement; it is not a GPU or gameplay-FPS measurement. Use --quick for a short run.
+
+```powershell
+./build-cmake/BloxideNoiseBenchmark.exe
+./build-cmake/BloxideNoiseBenchmark.exe --probe --seed 130 --reverse --threads
+```
+
+The v1.3 benchmark writes build/benchmark/v1.3-noise.csv with simplex/fractal throughput, cave generation/meshing, cold/traversal settling, driver spikes and publication latency. GPU regressions also render near positive and negative world limits. No vegetation, structures, water or disk edit saves are implemented yet; their feature seeds are reserved.
 
 See [ARCHITECTURES.md](ARCHITECTURES.md), [PERFORMANCE.md](PERFORMANCE.md), [CHANGELOG.md](CHANGELOG.md) and [LICENSE](LICENSE).
