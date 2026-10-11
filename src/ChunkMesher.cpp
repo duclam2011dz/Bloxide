@@ -3,20 +3,24 @@
 #include <algorithm>
 #include <array>
 #include <vector>
+#include <bloxide/Textures.hpp>
 
 namespace bloxide {
 namespace {
 
 struct Cell { BlockType block = BlockType::Air; std::uint8_t ao = 0; };
+bool sameSurface(const Cell& a,const Cell& b,int face){
+    return isSolid(a.block)&&isSolid(b.block)&&textureBaseLayer(a.block,face)==textureBaseLayer(b.block,face)&&a.ao==b.ao;
+}
 
 std::uint32_t packVertex(int x, int y, int z, BlockType block, int face, int ao) {
     // Vertices include the far boundaries: X/Z=16 and Y=256.
     return (static_cast<std::uint32_t>(x) & 31U) |
            ((static_cast<std::uint32_t>(y) & 511U) << 5U) |
            ((static_cast<std::uint32_t>(z) & 31U) << 14U) |
-           ((static_cast<std::uint32_t>(block) & 7U) << 19U) |
-           ((static_cast<std::uint32_t>(face) & 7U) << 22U) |
-           ((static_cast<std::uint32_t>(ao) & 3U) << 25U);
+           ((textureBaseLayer(block,face) & 31U) << 19U) |
+           ((static_cast<std::uint32_t>(face) & 7U) << 24U) |
+           ((static_cast<std::uint32_t>(ao) & 3U) << 27U);
 }
 
 } // namespace
@@ -82,7 +86,7 @@ std::shared_ptr<ChunkMesh> ChunkMesher::build(ChunkCoord coord,
                 int width = 1;
                 while (u + width < uSize[face]) {
                     const Cell next = mask[static_cast<std::size_t>(v * uSize[face] + u + width)];
-                    if (next.block != cell.block || next.ao != cell.ao) break;
+                    if (!sameSurface(next,cell,face)) break;
                     ++width;
                 }
                 int height = 1;
@@ -90,7 +94,7 @@ std::shared_ptr<ChunkMesh> ChunkMesher::build(ChunkCoord coord,
                     bool same = true;
                     for (int i = 0; i < width; ++i) {
                         const Cell next = mask[static_cast<std::size_t>((v + height) * uSize[face] + u + i)];
-                        if (next.block != cell.block || next.ao != cell.ao) { same = false; break; }
+                        if (!sameSurface(next,cell,face)) { same = false; break; }
                     }
                     if (!same) break;
                     ++height;

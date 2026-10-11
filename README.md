@@ -1,6 +1,24 @@
 # Bloxide
 
-Bloxide v1.2.0 is a C++17 voxel game prototype using SDL2 and OpenGL 3.3 Core.
+Bloxide v1.2.5 is a C++17 voxel game prototype using SDL2 and OpenGL 3.3 Core.
+
+## v1.2.5 physics and textures
+
+Movement accelerates toward 5 blocks/s at 45 blocks/s^2 on ground and 12 blocks/s^2 in air. Releasing input applies exponential material friction: Grass 14, Dirt 12, Bedrock 11 and Stone 9 s^-1. Mixed support uses the strongest friction. Air drag is 0.15 s^-1 and jumping preserves horizontal momentum. Collision remains substepped at at most 5 ms.
+
+Blocks now use 20 procedural PNGs (32x32 RGBA8) in a single Texture Array. Five material groups each have four variants: Grass top, Grass side, Dirt, Stone and Bedrock. Grass bottom shares Dirt. Integer layer IDs, coordinate-hashed variants and block-space UV repetition keep greedy quads large without stretching their textures.
+
+The C++ generator combines tileable domain warping, cellular/Voronoi fields, four-octave fBM, material masks, palette quantization and Bayer dithering. Texture seed defaults to 125 and does not affect the terrain generator. See [texture contact sheet](assets/textures/contact_sheet.png) and [3x3 repeat previews](assets/textures/tiled_preview.png).
+
+```powershell
+cmake --build build-cmake --target BloxideTextureGenerator
+./build-cmake/BloxideTextureGenerator.exe --output assets/textures --seed 125
+cmake --build build-cmake --parallel 4
+```
+
+PNG assets and their manifest are committed, so normal builds do not run generation. Every build refreshes assets/shaders beside the executable; runtime resolves them from the executable directory and works from unrelated working directories. Missing/corrupt files, incorrect dimensions, RGB/indexed/16-bit PNGs or nonopaque alpha stop renderer startup with a filename-specific error. LodePNG is vendored at a pinned commit with its zlib license.
+
+Texture filtering is nearest up close with nearest mip samples blended between levels at distance. Material tiles wrap both axes except the deliberately directional Grass side, which wraps horizontally and has grass above dirt.
 
 ## Features
 
@@ -46,7 +64,7 @@ Click validates the outlined target from the previously presented frame. Changed
 
 ## Tests and benchmark
 
-The CPU suite covers terrain periodicity/layers, DDA targeting, physics, journal reload, mesh revisions, overlapping group swaps and LOD transitions. Assertions remain enabled in Release tests.
+The CPU suite covers terrain periodicity/layers, DDA targeting, acceleration/material friction, PNG validation, procedural palette/seam checks, journal reload, mesh revisions, overlapping group swaps and LOD transitions. Assertions remain enabled in Release tests.
 
 ```powershell
 cmake -S . -B build-cmake -DBLOXIDE_RENDER_TESTS=ON
@@ -56,7 +74,7 @@ ctest --test-dir build-cmake --output-on-failure
 ./build-cmake/BloxideBenchmark.exe
 ```
 
-The optional hidden-window OpenGL test checks terrain/outline pixels, outline occlusion and crosshair. It delays remeshing and injects an upload failure for both break and place, verifies old geometry stays visible, and checks retired buffers are collected.
+The optional hidden-window OpenGL test checks every texture layer and mip dimension, then compares repeated shader samples on large quads for six faces, signed coordinates and AO. It also checks terrain/outline pixels, outline occlusion, crosshair, delayed remesh, failed-upload retry and retired buffers. Near/far review PNGs are saved in the executable's diagnostics directory during the test.
 
 The benchmark writes build/benchmark/v1.2-streaming.csv, v1.2-summary.json and v1.2-trace.json. It measures CPU driver work and edit-to-publish latency with simulated upload acknowledgement; it is not a GPU or gameplay-FPS measurement. Use --quick for a short run.
 

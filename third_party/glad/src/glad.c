@@ -1,5 +1,11 @@
 #include <stddef.h>
 #include <glad/glad.h>
+void (*glTexImage3D)(GLenum,GLint,GLint,GLsizei,GLsizei,GLsizei,GLint,GLenum,GLenum,const void*) = NULL;
+void (*glTexSubImage3D)(GLenum,GLint,GLint,GLint,GLint,GLsizei,GLsizei,GLsizei,GLenum,GLenum,const void*) = NULL;
+void (*glGenerateMipmap)(GLenum) = NULL;
+void (*glActiveTexture)(GLenum) = NULL;
+void (*glUniform1i)(GLint,GLint) = NULL;
+void (*glUniform1ui)(GLint,GLuint) = NULL;
 GLsync (*glFenceSync)(GLenum, GLbitfield) = NULL;
 GLenum (*glClientWaitSync)(GLsync, GLbitfield, GLuint64) = NULL;
 void (*glDeleteSync)(GLsync) = NULL;
@@ -32,6 +38,8 @@ void (*glEnableVertexAttribArray)(GLuint) = NULL;
 #define LOAD(name) do { *(void **)(&name) = load(#name); if (!name) return 0; } while (0)
 int gladLoadGLLoader(GLADloadproc load) {
     if (!load) return 0;
+    LOAD(glTexImage3D); LOAD(glTexSubImage3D); LOAD(glGenerateMipmap);
+    LOAD(glActiveTexture); LOAD(glUniform1i); LOAD(glUniform1ui);
     LOAD(glFenceSync); LOAD(glClientWaitSync); LOAD(glDeleteSync);
     LOAD(glCreateShader); LOAD(glShaderSource); LOAD(glCompileShader); LOAD(glGetShaderiv); LOAD(glDeleteShader);
     LOAD(glCreateProgram); LOAD(glAttachShader); LOAD(glLinkProgram); LOAD(glGetProgramiv); LOAD(glDeleteProgram);

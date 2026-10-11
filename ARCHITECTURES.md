@@ -1,4 +1,4 @@
-# Bloxide architecture - v1.2.0
+# Bloxide architecture - v1.2.5
 
 ## Ownership and frame order
 
@@ -32,11 +32,27 @@ surfaceHeight uses positive modulo 128 before evaluating floor(64 + 10*sin(2*pi*
 
 LOD1 derives a conservative heightmap from the block snapshot: interior patches up to 4x4 take maximum height while the outermost block ring stays exact. Greedy meshing emits both tops and vertical steps from this coarse occupancy. Exact border heights preserve interfaces with LOD0 and neighboring LOD1. Edited chunks force LOD0; crossing the radius-4 threshold invalidates mesh only.
 
-Packed vertices retain X/Z=16 and Y=256 using X bits 0..4, Y 5..13, Z 14..18, material 19..21, face 22..24 and AO 25..26. Triangle winding remains outward.
+Packed vertices retain X/Z=16 and Y=256 using X bits 0..4, Y 5..13, Z 14..18, base-layer 19..23, face 24..26 and AO 27..28. Triangle winding remains outward. Base-layer replaces the old material field but keeps the vertex at 4 bytes.
+
+## Procedural assets and Texture Array
+
+BloxideTextureGenerator is an explicit C++ CLI. It combines periodic value noise, domain-warped four-octave fBM, toroidal cellular distances, gravel/crack/blade masks and Bayer 4x4 dithering into material-specific 8-12-color palettes. Seeded interior variations blend into a shared border. Grass side has a directional grass-to-dirt mask; all other material tiles wrap both axes.
+
+The generator writes 20 opaque RGBA8 PNGs with LodePNG auto_convert disabled, a manifest, an enlarged contact sheet and mixed-variant 3x3 previews. The manifest schema is BLOXIDE_TEXTURES / version 1 / width / height / layer count / uint32 seed / generator version, followed by layer/group/variant/filename entries. Loader checks uniqueness, mapping and all 20 entries, inspects the original PNG color format, validates 32x32 RGBA8 before decoding and rejects nonopaque pixels. Decoding is bounded. LodePNG sources and license are pinned in third_party/lodepng/UPSTREAM.md.
+
+Runtime assets and shaders are refreshed into the executable directory on every build. SDL_GetBasePath resolves the runtime root. Startup reports bad assets and stops; there is no silent placeholder or runtime generation.
+
+Array base layers are Grass top 0, Grass side 4, Dirt 8, Stone 12 and Bedrock 16. Each group has four consecutive variants. Greedy merge keys use base-layer, face and AO, not variant or original block type. Grass bottom can merge with Dirt when the remaining key matches.
+
+Renderer uploads GL_RGBA8 layers into GL_TEXTURE_2D_ARRAY with GL_REPEAT, GL_NEAREST magnification and GL_NEAREST_MIPMAP_LINEAR minification. It generates six mip levels (32 down to 1). The vertex shader decodes flat uint base-layer/face attributes and computes unwrapped block-space UV. The fragment shader uses an inward face offset to identify the owning voxel, hashes signed world coordinates/base-layer/texture seed to choose a variant and samples with textureGrad using continuous UV derivatives. AO modulates texture color; outline/crosshair remain separate passes.
+
+The texture object is released while the GL context is current. The array payload is 81,920 bytes at level zero and 109,200 bytes including mipmaps, excluding driver overhead.
 
 ## Physics and verification
 
 The v1.1.5 player body remains 0.6x1.8x0.6 with eye offset 1.62, gravity 24 blocks/s^2, terminal speed 40 blocks/s and grounded jump speed 7 blocks/s. Axis collision uses substeps at most 5 ms; unloaded columns remain barriers. Spawn scans actual loaded terrain.
+
+PhysicsSettings supplies speed, accelerations, drag and material friction. Horizontal velocity approaches the requested direction with a vector acceleration limit of 45 blocks/s^2 grounded or 12 airborne. Grounded zero-input braking uses exp(-coefficient*dt), choosing the maximum coefficient among actual supporting blocks: Grass 14, Dirt 12, Bedrock 11, Stone 9 s^-1. Air drag is 0.15 s^-1; zero-input horizontal speed below 0.01 is snapped to zero on ground. These operations run in the collision substeps. Input normalization prevents diagonal speed gain, and collisions clear only the blocked velocity axis.
 
 Edit collision changes immediately. The old visual snapshot is temporarily retained during mesh work, with interaction locked until group publication. This deliberate interval is measured as edit-to-publish latency.
 

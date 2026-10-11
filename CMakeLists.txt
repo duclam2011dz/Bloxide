@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(Bloxide VERSION 1.2.0 LANGUAGES C CXX)
+project(Bloxide VERSION 1.2.5 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -13,6 +13,19 @@ endif()
 
 find_package(SDL2 CONFIG REQUIRED)
 find_package(OpenGL REQUIRED)
+
+add_library(lodepng STATIC third_party/lodepng/lodepng.cpp)
+target_include_directories(lodepng PUBLIC third_party/lodepng)
+add_library(bloxide_assets STATIC src/Assets.cpp src/TextureGenerator.cpp)
+target_include_directories(bloxide_assets PUBLIC include)
+target_link_libraries(bloxide_assets PUBLIC lodepng)
+if(MSVC)
+    target_compile_options(bloxide_assets PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(bloxide_assets PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+add_executable(BloxideTextureGenerator tools/TextureGenerator.cpp)
+target_link_libraries(BloxideTextureGenerator PRIVATE bloxide_assets)
 
 add_library(glad STATIC
     third_party/glad/src/glad.c
@@ -32,7 +45,7 @@ add_library(bloxide_core STATIC
     src/World.cpp
 )
 target_include_directories(bloxide_core PUBLIC include)
-target_link_libraries(bloxide_core PUBLIC glad)
+target_link_libraries(bloxide_core PUBLIC glad bloxide_assets)
 target_compile_definitions(bloxide_core PUBLIC SDL_MAIN_HANDLED)
 
 if(MSVC)
@@ -51,6 +64,11 @@ target_compile_definitions(Bloxide PRIVATE
     BLOXIDE_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
 )
 target_link_libraries(Bloxide PRIVATE bloxide_core SDL2::SDL2 OpenGL::GL)
+add_custom_target(BloxideRuntimeAssets ALL
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/assets" "$<TARGET_FILE_DIR:Bloxide>/assets"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/shaders" "$<TARGET_FILE_DIR:Bloxide>/shaders"
+    VERBATIM)
+add_dependencies(Bloxide BloxideRuntimeAssets)
 
 add_executable(BloxideBenchmark
     tools/Benchmark.cpp
@@ -83,6 +101,11 @@ if(BUILD_TESTING)
     add_executable(BloxideV120Tests tests/V120Tests.cpp)
     target_link_libraries(BloxideV120Tests PRIVATE bloxide_core)
     add_test(NAME BloxideV120Tests COMMAND BloxideV120Tests)
+    add_executable(BloxideV125Tests tests/V125Tests.cpp)
+    target_link_libraries(BloxideV125Tests PRIVATE bloxide_core)
+    target_compile_definitions(BloxideV125Tests PRIVATE BLOXIDE_ASSET_DIR="${CMAKE_SOURCE_DIR}/assets/textures")
+    add_test(NAME BloxideV125Tests COMMAND BloxideV125Tests)
+    set_tests_properties(BloxideV125Tests PROPERTIES TIMEOUT 90)
     set_tests_properties(BloxideV120Tests PROPERTIES TIMEOUT 90)
     set_tests_properties(BloxideRegressionTests PROPERTIES TIMEOUT 45)
     if(BLOXIDE_RENDER_TESTS)

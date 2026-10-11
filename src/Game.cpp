@@ -11,6 +11,8 @@
 #include <iostream>
 #include <vector>
 #include <chrono>
+#include <filesystem>
+#include <bloxide/Textures.hpp>
 
 #ifndef BLOXIDE_SOURCE_DIR
 #define BLOXIDE_SOURCE_DIR "."
@@ -46,7 +48,7 @@ int Game::run(bool smokeTest) {
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-    window_ = SDL_CreateWindow("Bloxide v1.2.0", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1280, 720, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | (smokeTest ? SDL_WINDOW_HIDDEN : 0));
+    window_ = SDL_CreateWindow("Bloxide v1.2.5", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1280, 720, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | (smokeTest ? SDL_WINDOW_HIDDEN : 0));
     if (!window_) { std::cerr << SDL_GetError() << std::endl; SDL_Quit(); return 1; }
     context_ = SDL_GL_CreateContext(window_);
     if (!context_ || !gladLoadGLLoader(reinterpret_cast<GLADloadproc>(SDL_GL_GetProcAddress))) {
@@ -55,10 +57,14 @@ int Game::run(bool smokeTest) {
         SDL_DestroyWindow(window_); SDL_Quit(); return 1;
     }
     SDL_GL_SetSwapInterval(1);
-    if (!renderer_.initialize(std::string(BLOXIDE_SOURCE_DIR) + "/shaders/voxel.vert", std::string(BLOXIDE_SOURCE_DIR) + "/shaders/voxel.frag")) {
-        std::cerr << "Shader initialization failed" << std::endl;
+    char* executableBase=SDL_GetBasePath();
+    if(!executableBase){std::cerr<<SDL_GetError()<<std::endl;SDL_GL_DeleteContext(context_);SDL_DestroyWindow(window_);SDL_Quit();return 1;}
+    std::filesystem::path root(executableBase);SDL_free(executableBase);
+    if (!renderer_.initialize((root/"shaders/voxel.vert").string(),(root/"shaders/voxel.frag").string(),(root/"assets/textures").string())) {
+        std::cerr << "Renderer/assets initialization failed" << std::endl;
         renderer_.shutdown(); SDL_GL_DeleteContext(context_); SDL_DestroyWindow(window_); SDL_Quit(); return 1;
     }
+    if(smokeTest&&!renderer_.validateTexturesForTests()){std::cerr<<"Texture Array/mipmap validation failed"<<std::endl;renderer_.shutdown();SDL_GL_DeleteContext(context_);SDL_DestroyWindow(window_);SDL_Quit();return 3;}
     SDL_SetRelativeMouseMode(smokeTest ? SDL_FALSE : SDL_TRUE);
     camera_.setPosition(player_.eye());
     int smokeFrames = 0;
@@ -100,7 +106,7 @@ int Game::run(bool smokeTest) {
         SDL_GetWindowSize(window_, &width, &height);
         const auto renderedChunks=world_.renderChunks(camera_.position(), camera_.forward());
         renderer_.render(camera_,renderedChunks,width,height);
-        if(smokeTest&&target.hit&&!outlineChecked){
+        if(smokeTest&&target.hit&&!outlineChecked&&world_.stats().ready>=289){
             const auto blackPixels=[&](){
                 std::vector<unsigned char> pixels(static_cast<std::size_t>(width*height*3));
                 glReadPixels(0,0,width,height,GL_RGB,GL_UNSIGNED_BYTE,pixels.data());
@@ -124,6 +130,21 @@ int Game::run(bool smokeTest) {
             if(center[0]<220||center[1]<220||center[2]<220){std::cerr<<"Crosshair missing"<<std::endl;break;}
             renderer_.render(camera_,renderedChunks,width,height);
             outlineChecked=true;
+            const auto saveImage=[&](const char* filename){
+                TextureImage image;image.width=width;image.height=height;image.rgba=std::vector<unsigned char>(std::size_t(width)*height*4);
+                std::vector<unsigned char> raw(image.rgba.size());
+                glReadPixels(0,0,width,height,GL_RGBA,GL_UNSIGNED_BYTE,raw.data());
+                for(int y=0;y<height;++y)std::copy_n(raw.begin()+std::size_t(height-1-y)*width*4,width*4,image.rgba.begin()+std::size_t(y)*width*4);
+                std::filesystem::create_directories(root/"diagnostics");
+                TextureGenerator::writePng(root/"diagnostics"/filename,image);
+            };
+            renderer_.renderTarget(camera_,target,width,height);
+            saveImage("textures_near.png");
+            Camera far=camera_;far.rotate(0,45);
+            renderer_.render(far,renderedChunks,width,height);
+            renderer_.renderTarget(far,{},width,height);
+            saveImage("textures_far.png");
+            renderer_.render(camera_,renderedChunks,width,height);
         }
         if(spawned_&&captured_)renderer_.renderTarget(camera_,target,width,height);
         presentedTarget_=target;
@@ -133,9 +154,9 @@ int Game::run(bool smokeTest) {
                 glReadPixels(0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, pixels.data());
                 std::size_t terrainPixels = 0;
                 for (std::size_t p = 0; p < pixels.size(); p += 3)
-                    if (pixels[p] < 120 && pixels[p + 1] > pixels[p + 2] + 20) ++terrainPixels;
+                    if(std::abs(int(pixels[p])-122)>3||std::abs(int(pixels[p+1])-186)>3||std::abs(int(pixels[p+2])-235)>3)++terrainPixels;
                 if(smokeEditing&&terrainPixels<=1000){std::cerr<<"Terrain vanished during render regression"<<std::endl;break;}
-                if(!smokeEditing&&terrainPixels>1000&&world_.targetable(15,8)&&world_.targetable(16,8)) {
+                if(!smokeEditing&&outlineChecked&&terrainPixels>1000&&world_.targetable(15,8)&&world_.targetable(16,8)) {
                     for(auto& c:world_.renderChunks(camera_.position(),camera_.forward()))
                         if(c.coord==ChunkCoord{0,0})smokeRevision=c.mesh->revision;
                     world_.setMeshDelayForTests(80);
@@ -169,7 +190,8 @@ int Game::run(bool smokeTest) {
                               << " swaps=" << renderer_.swaps()
                               << " stale_results=" << world_.stats().staleResults << std::endl;
                     std::cout<<"outline_pixels="<<outlinePixels<<" max_frame_ms="<<maxFrameMs
-                             <<" break_publish_ms="<<breakPublishMs<<" edits="<<smokeEditCount<<std::endl;
+                             <<" break_publish_ms="<<breakPublishMs<<" edits="<<smokeEditCount
+                             <<" texture_load_ms="<<renderer_.textureLoadMs()<<" texture_upload_submit_ms="<<renderer_.textureUploadMs()<<std::endl;
                     running_ = false;
                     }
                 }
@@ -229,13 +251,13 @@ void Game::update(float dt) {
     player_.step(dt, move[0], move[2], jumpRequested_ && captured_, [this](int x, int y, int z) {
         // Unknown chunks are barriers until their collision data arrives.
         return !world_.columnLoaded(x, z) || isSolid(world_.get(x, y, z));
-    });
+    },[this](int x,int y,int z){return world_.get(x,y,z);});
     jumpRequested_ = false;
     camera_.setPosition(player_.eye());
     if (hudEnabled_) {
         const auto stats = world_.stats();
         std::ostringstream title;
-        title << "Bloxide v1.2.0 | loaded " << stats.loaded << " draws " << renderer_.drawCalls()
+        title << "Bloxide v1.2.5 | loaded " << stats.loaded << " draws " << renderer_.drawCalls()
               << " feet Y " << player_.feet[1] << " grounded " << player_.grounded
               << " swaps " << stats.swaps << " edit ms " << stats.lastPublishMs;
         SDL_SetWindowTitle(window_, title.str().c_str());

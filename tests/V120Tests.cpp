@@ -29,7 +29,7 @@ void terrain() {
     int height[16][16]{};
     for(std::size_t i=0;i<coarse->vertices.size();i+=4){
         auto p=coarse->vertices[i].packed;
-        if(((p>>22U)&7U)!=2)continue;
+        if(((p>>24U)&7U)!=2)continue;
         int x0=16,z0=16,x1=0,z1=0,y=0;
         for(int j=0;j<4;++j){auto v=coarse->vertices[i+j].packed;int x=v&31U,z=(v>>14U)&31U;x0=std::min(x0,x);x1=std::max(x1,x);z0=std::min(z0,z);z1=std::max(z1,z);y=(v>>5U)&511U;}
         for(int x=x0;x<x1;++x)for(int z=z0;z<z1;++z)height[x][z]=std::max(height[x][z],y-1);

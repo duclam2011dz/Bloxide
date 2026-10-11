@@ -4,6 +4,7 @@
 #include <glad/glad.h>
 #include <unordered_map>
 #include <thread>
+#include <string>
 namespace bloxide {
 class Renderer {
 public:
@@ -11,7 +12,10 @@ public:
     ~Renderer();
     Renderer(const Renderer&)=delete;
     Renderer& operator=(const Renderer&)=delete;
-    bool initialize(const std::string& vertexShaderPath,const std::string& fragmentShaderPath);
+    bool initialize(const std::string& vertexShaderPath,const std::string& fragmentShaderPath,const std::string& assetsDirectory);
+    bool validateTexturesForTests() const;
+    double textureLoadMs()const{return textureLoadMs_;}
+    double textureUploadMs()const{return textureUploadMs_;}
     bool upload(const ChunkUpload& upload);
     bool publish(const UploadGroup& group);
     void synchronize(const std::vector<ChunkCoord>& loaded);
@@ -35,6 +39,10 @@ private:
     void collectRetired();
     void assertThread()const;
     unsigned int program_=0,overlayProgram_=0,overlayVao_=0,overlayVbo_=0;
+    unsigned int textures_=0;
+    std::uint32_t textureSeed_=125;
+    double textureLoadMs_=0,textureUploadMs_=0;
+    std::string assetsDirectory_;
     std::unordered_map<ChunkCoord,GpuMesh,ChunkCoordHash> meshes_,pending_;
     std::vector<Retired> retired_;
     std::thread::id owner_;

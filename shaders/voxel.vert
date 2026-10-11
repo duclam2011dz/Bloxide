@@ -1,22 +1,25 @@
 #version 330 core
-
-layout (location = 0) in uint aPacked;
-
+layout(location=0) in uint aPacked;
 uniform mat4 uView;
 uniform mat4 uProjection;
 uniform vec3 uChunkOrigin;
-
-out vec3 vColor;
+out vec2 vUv;
+out vec3 vWorldPosition;
 out float vAo;
-
-void main() {
-    uint x = aPacked & 31u;
-    uint y = (aPacked >> 5u) & 511u;
-    uint z = (aPacked >> 14u) & 31u;
-    uint block = (aPacked >> 19u) & 7u;
-    uint ao = (aPacked >> 25u) & 3u;
-    vec3 colors[5] = vec3[5](vec3(0.0), vec3(0.12, 0.12, 0.14), vec3(0.30, 0.72, 0.22), vec3(0.48, 0.27, 0.12), vec3(0.48, 0.52, 0.57));
-    vColor = colors[block];
-    vAo = 1.0 - float(ao) * 0.18;
-    gl_Position = uProjection * uView * vec4(vec3(x, y, z) + uChunkOrigin, 1.0);
+flat out uint vBaseLayer;
+flat out uint vFace;
+void main(){
+    vec3 local=vec3(aPacked&31u,(aPacked>>5u)&511u,(aPacked>>14u)&31u);
+    vBaseLayer=(aPacked>>19u)&31u;
+    vFace=(aPacked>>24u)&7u;
+    uint ao=(aPacked>>27u)&3u;
+    if(vFace==0u)vUv=vec2(local.z,-local.y);
+    else if(vFace==1u)vUv=vec2(-local.z,-local.y);
+    else if(vFace==2u)vUv=local.xz;
+    else if(vFace==3u)vUv=vec2(local.x,-local.z);
+    else if(vFace==4u)vUv=vec2(-local.x,-local.y);
+    else vUv=vec2(local.x,-local.y);
+    vWorldPosition=local+uChunkOrigin;
+    vAo=1.0-float(ao)*0.18;
+    gl_Position=uProjection*uView*vec4(vWorldPosition,1);
 }

@@ -49,6 +49,21 @@ typedef unsigned long long GLuint64;
 #define GL_LEQUAL 0x0203
 #define GL_LESS 0x0201
 #define GL_NO_ERROR 0
+#define GL_TEXTURE_2D_ARRAY 0x8C1A
+#define GL_TEXTURE0 0x84C0
+#define GL_RGBA 0x1908
+#define GL_RGBA8 0x8058
+#define GL_TEXTURE_WRAP_S 0x2802
+#define GL_TEXTURE_WRAP_T 0x2803
+#define GL_TEXTURE_MIN_FILTER 0x2801
+#define GL_TEXTURE_MAG_FILTER 0x2800
+#define GL_REPEAT 0x2901
+#define GL_NEAREST 0x2600
+#define GL_NEAREST_MIPMAP_LINEAR 0x2702
+#define GL_MAX_ARRAY_TEXTURE_LAYERS 0x88FF
+#define GL_TEXTURE_WIDTH 0x1000
+#define GL_TEXTURE_HEIGHT 0x1001
+#define GL_TEXTURE_DEPTH 0x8071
 
 typedef void* (*GLADloadproc)(const char* name);
 int gladLoadGLLoader(GLADloadproc load);
@@ -63,6 +78,19 @@ GLenum glGetError(void);
 void glDisable(GLenum);
 void glDepthMask(GLboolean);
 void glDepthFunc(GLenum);
+void glGenTextures(GLsizei,GLuint*);
+void glDeleteTextures(GLsizei,const GLuint*);
+void glBindTexture(GLenum,GLuint);
+void glTexParameteri(GLenum,GLenum,GLint);
+void glGetIntegerv(GLenum,GLint*);
+void glGetTexLevelParameteriv(GLenum,GLint,GLenum,GLint*);
+void glGetTexImage(GLenum,GLint,GLenum,GLenum,void*);
+extern void (*glTexImage3D)(GLenum,GLint,GLint,GLsizei,GLsizei,GLsizei,GLint,GLenum,GLenum,const void*);
+extern void (*glTexSubImage3D)(GLenum,GLint,GLint,GLint,GLint,GLsizei,GLsizei,GLsizei,GLenum,GLenum,const void*);
+extern void (*glGenerateMipmap)(GLenum);
+extern void (*glActiveTexture)(GLenum);
+extern void (*glUniform1i)(GLint,GLint);
+extern void (*glUniform1ui)(GLint,GLuint);
 extern GLsync (*glFenceSync)(GLenum, GLbitfield);
 extern GLenum (*glClientWaitSync)(GLsync, GLbitfield, GLuint64);
 extern void (*glDeleteSync)(GLsync);

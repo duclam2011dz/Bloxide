@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.2.5] - 2026-10-11
+
+- Added substepped ground/air acceleration, material friction, momentum-preserving jumping and weak air drag.
+- Added deterministic C++ texture generation using periodic warping, fBM, cellular fields, procedural masks, palettes and ordered dithering.
+- Exported 20 opaque 32x32 RGBA8 PNG variants, a manifest, contact sheet and mixed-variant repeat previews.
+- Vendored pinned LodePNG with license; added strict PNG/catalog validation and executable-relative asset loading.
+- Added a 20-layer Texture Array, full mip chain and nearest pixel-art filtering.
+- Packed integer base-layer IDs into 32-bit vertices; repeated UV per block and selected variants in the shader without fragmenting greedy quads.
+- Refreshed runtime assets/shaders on every build while keeping texture generation explicit.
+- Added physics/material, palette/seam, loader rejection, layer/mip and six-face shader sampling regressions.
+- Reviewed near/far render captures and updated specs/performance evidence.
+
 ## [1.2.0] - 2026-10-11
 
 - Kept active CPU/GPU meshes visible throughout remeshing; added pending buffers and atomic update-group publication.

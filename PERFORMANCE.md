@@ -1,5 +1,39 @@
 # Bloxide performance and validation
 
+## v1.2.5 - 2026-10-11
+
+Debug and Release each passed 6/6 tests, including the optional OpenGL framebuffer regression. The v1.2.5 asset/physics test and framebuffer test additionally passed three consecutive Release repetitions.
+
+### Texture pipeline measurements
+
+Environment remains local Windows/MSYS2 UCRT64, GCC 16.1 and OpenGL 3.3. The explicit generator run with --seed 125 reproduced all PNG SHA-256 hashes byte-for-byte.
+
+| Metric | Observed value |
+|---|---:|
+| Material assets | 20 x 32x32 source RGBA8 |
+| Generator/export time, including previews | 129.412 ms |
+| Generator-side strict catalog load | 6.8702 ms |
+| Total material PNG bytes | 17,083 |
+| All PNG bytes including two previews | 91,908 |
+| Renderer load, final repeated Release run | 5.9352 ms |
+| Array upload/mipmap CPU submission time | 0.1137 ms |
+| Base-level RGBA8 payload | 81,920 bytes |
+| Six-level mip payload | 109,200 bytes |
+
+The upload time measures CPU API submission, including glGenerateMipmap; it does not measure GPU completion or actual driver VRAM overhead. Generation includes PNG encoding and the contact/tiled sheets. Load timings vary with filesystem cache.
+
+### Visual and correctness checks
+
+The source contact sheet and mixed-variant 3x3 previews were inspected, followed by near/far in-game captures after 289 chunks became active. Captures are generated under the executable's diagnostics directory. Pixel-art remains crisp near the player, material mapping is distinct and mipmaps soften distant detail.
+
+The OpenGL test validates all 20 source layers by readback and checks six mip dimensions. It then compares shader samples on 8x4 quads for every face, each base material, positive/negative world coordinates and AO levels 0/3. Sampling checks cover UV repetition, CPU/GLSL variant hash agreement, side orientation and integer layer decoding.
+
+The final repeated Release render run retained old meshes across 15 delayed-edit frames, produced 1,212 visible black outline pixels, and ended with 289 draw calls and player grounded at feet Y=74. Its maximum diagnostic frame was 259.791 ms; this includes framebuffer readbacks and encoding two 1280x720 PNG screenshots, so it is not a gameplay frame-time estimate.
+
+Runtime was also launched from build-tools rather than the repository/executable directory. It resolved assets successfully. Temporarily removing the generated runtime copy of stone_0.png caused startup to return 1 and name the missing file; the file was restored afterward.
+
+CPU tests verify deterministic seeds/variants, palette membership, opposite-edge wrapping, cross-variant borders, manifest ordering/duplicates, PNG corruption/size/RGB/indexed/16-bit/alpha rejection, mixed-material braking, acceleration/air drag, diagonal speed, jump momentum and 30/60/144 FPS consistency. The terrain generator and its lack of noise/seed remain unchanged.
+
 ## v1.2.0 - 2026-10-11
 
 Environment: local Windows/MSYS2 UCRT64, GCC 16.1, CMake 4.4.3, SDL2 and an OpenGL 3.3 context. Debug and Release each passed 5/5 CTest checks. The lifecycle and framebuffer regressions additionally passed three consecutive Release repetitions.
