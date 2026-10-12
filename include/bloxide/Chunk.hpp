@@ -23,6 +23,7 @@ struct ChunkCoordHash {
 enum class ChunkState : unsigned char {
     Unloaded, Queued, Loading, Generated, Meshing, Uploading, Ready, Unloading, Failed
 };
+enum class GenerationState {Requested,Generating,Ready,Cancelled,Failed};
 
 enum class ChunkDirty : unsigned char {
     None = 0, Terrain = 1 << 0, Neighbor = 1 << 1, Mesh = 1 << 2, Upload = 1 << 3
@@ -39,6 +40,9 @@ struct ChunkData {
     std::array<BlockType, Volume> blocks{};
     std::uint64_t version = 0;
     bool edited = false;
+    std::array<std::uint16_t,18*18> heightHalo{};
+    std::array<std::uint16_t,16> sectionSolid{};
+    void rebuildSummaries() noexcept;
     [[nodiscard]] bool inBounds(int x, int y, int z) const noexcept;
     [[nodiscard]] BlockType get(int x, int y, int z) const noexcept;
     bool set(int x, int y, int z, BlockType value) noexcept;
@@ -46,17 +50,20 @@ struct ChunkData {
 };
 
 struct ChunkMeshVertex { std::uint32_t packed = 0; };
+struct HeightVertex { float x=0,y=0,z=0,fromY=0; std::uint32_t layer=0,face=2; };
 
 struct ChunkMesh {
     ChunkCoord coord{};
     std::vector<ChunkMeshVertex> vertices;
+    std::vector<HeightVertex> heightVertices;
+    bool heightmap=false;
     std::vector<std::uint32_t> indices;
     std::uint8_t lod = 0;
     std::uint64_t sourceVersion = 0;
     std::uint64_t instanceId = 0;
     std::uint64_t revision = 0;
     std::uint64_t groupId = 0;
-    std::size_t byteSize() const noexcept { return vertices.size() * sizeof(ChunkMeshVertex) + indices.size() * sizeof(std::uint32_t); }
+    std::size_t byteSize() const noexcept { return vertices.size() * sizeof(ChunkMeshVertex) + heightVertices.size()*sizeof(HeightVertex) + indices.size() * sizeof(std::uint32_t); }
 };
 
 struct ChunkRecord {
@@ -73,6 +80,8 @@ struct ChunkRecord {
     std::atomic<unsigned char> dirty{static_cast<unsigned char>(ChunkDirty::Terrain) | static_cast<unsigned char>(ChunkDirty::Mesh)};
     std::atomic<std::uint64_t> version{0};
     std::atomic<bool> cancelRequested{false};
+    std::atomic<GenerationState> generationState{GenerationState::Requested};
+    std::uint64_t generationRevision=1;
     std::uint8_t retries = 0;
 };
 

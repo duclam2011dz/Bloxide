@@ -10,7 +10,7 @@ public:
     static std::uint64_t mix(std::uint64_t x);
 private: std::uint64_t state_;
 };
-enum class SeedDomain:std::uint64_t {Continental=1,Ridges,Hills,Turbulence,WarpX,WarpZ,Caves,CaveWarpX,CaveWarpY,CaveWarpZ,Structures,Vegetation};
+enum class SeedDomain:std::uint64_t {Continental=1,Ridges,Hills,Turbulence,WarpX,WarpZ,Caves,CaveWarpX,CaveWarpY,CaveWarpZ,Structures,Vegetation,Roughness,MountainMask,Valley,Plateau};
 struct SeedDerivation {
     static std::uint64_t derive(std::uint64_t root,SeedDomain domain);
     static std::uint64_t coordinateHash(std::uint64_t seed,std::int64_t x,std::int64_t y,std::int64_t z);

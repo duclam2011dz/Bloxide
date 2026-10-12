@@ -15,6 +15,7 @@ int main(int argc,char**argv){
         for(int i=1;i<argc;++i){
             std::string arg=argv[i];
             if(arg=="--probe")probe=true;else if(arg=="--reverse")reverse=true;else if(arg=="--threads")threads=true;else if(arg=="--golden")golden=true;else if(arg=="--quick")quick=true;
+            else if(arg=="--fields"){auto seed=settings.seed;settings=WorldSettings::terrainFields();settings.seed=seed;}
             else if(arg=="--seed"&&i+1<argc)settings.seed=WorldSettings::parseSeed(argv[++i]);else throw std::invalid_argument("invalid benchmark argument");
         }
         if(golden){

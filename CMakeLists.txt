@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(Bloxide VERSION 1.3.0 LANGUAGES C CXX)
+project(Bloxide VERSION 1.3.5 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -37,6 +37,7 @@ add_library(bloxide_core STATIC
     src/Camera.cpp
     src/Chunk.cpp
     src/ChunkGenerator.cpp
+    src/Heightmap.cpp
     src/ChunkMesher.cpp
     src/Profiler.cpp
     src/Physics.cpp
@@ -76,6 +77,8 @@ add_executable(BloxideBenchmark
     tools/Benchmark.cpp
 )
 add_executable(BloxideNoiseBenchmark tools/NoiseBenchmark.cpp)
+add_executable(BloxideTerrainBenchmark tools/TerrainBenchmark.cpp)
+target_link_libraries(BloxideTerrainBenchmark PRIVATE bloxide_core)
 target_link_libraries(BloxideNoiseBenchmark PRIVATE bloxide_core)
 target_include_directories(BloxideBenchmark PRIVATE include)
 target_link_libraries(BloxideBenchmark PRIVATE bloxide_core)
@@ -101,6 +104,8 @@ if(BUILD_TESTING)
     add_test(NAME BloxideBenchmarkSmoke COMMAND BloxideBenchmark --quick)
     add_test(NAME BloxideSeedReproducibility COMMAND ${CMAKE_COMMAND} "-DPROBE=$<TARGET_FILE:BloxideNoiseBenchmark>" -P "${CMAKE_SOURCE_DIR}/tests/Reproducibility.cmake")
     set_tests_properties(BloxideSeedReproducibility PROPERTIES TIMEOUT 90)
+    add_test(NAME BloxideFieldsReproducibility COMMAND ${CMAKE_COMMAND} "-DPROBE=$<TARGET_FILE:BloxideNoiseBenchmark>" "-DEXTRA=--fields" -P "${CMAKE_SOURCE_DIR}/tests/Reproducibility.cmake")
+    set_tests_properties(BloxideFieldsReproducibility PROPERTIES TIMEOUT 90)
     add_executable(BloxideRegressionTests tests/RegressionTests.cpp)
     target_link_libraries(BloxideRegressionTests PRIVATE bloxide_core)
     add_test(NAME BloxideRegressionTests COMMAND BloxideRegressionTests)
@@ -112,6 +117,10 @@ if(BUILD_TESTING)
     target_compile_definitions(BloxideV125Tests PRIVATE BLOXIDE_ASSET_DIR="${CMAKE_SOURCE_DIR}/assets/textures")
     add_test(NAME BloxideV125Tests COMMAND BloxideV125Tests)
     add_executable(BloxideV130Tests tests/V130Tests.cpp)
+    add_executable(BloxideV135Tests tests/V135Tests.cpp)
+    target_link_libraries(BloxideV135Tests PRIVATE bloxide_core)
+    add_test(NAME BloxideV135Tests COMMAND BloxideV135Tests)
+    set_tests_properties(BloxideV135Tests PROPERTIES TIMEOUT 120)
     target_link_libraries(BloxideV130Tests PRIVATE bloxide_core)
     add_test(NAME BloxideV130Tests COMMAND BloxideV130Tests)
     set_tests_properties(BloxideV130Tests PROPERTIES TIMEOUT 90)
@@ -119,6 +128,8 @@ if(BUILD_TESTING)
     set_tests_properties(BloxideV120Tests PROPERTIES TIMEOUT 90)
     set_tests_properties(BloxideRegressionTests PROPERTIES TIMEOUT 45)
     if(BLOXIDE_RENDER_TESTS)
+        add_test(NAME BloxideLodRenderRegression COMMAND Bloxide --smoke-test --require-lod --preset mountainous --seed 130)
+        set_tests_properties(BloxideLodRenderRegression PROPERTIES TIMEOUT 120)
         add_test(NAME BloxideRenderRegression COMMAND Bloxide --smoke-test)
         add_test(NAME BloxideFarRenderPositive COMMAND Bloxide --smoke-test --smoke-origin 1099511627648)
         add_test(NAME BloxideFarRenderNegative COMMAND Bloxide --smoke-test --smoke-origin -1099511627648)

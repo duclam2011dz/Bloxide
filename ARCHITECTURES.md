@@ -1,4 +1,4 @@
-# Bloxide architecture - v1.3.0
+# Bloxide architecture - v1.3.5
 
 ## Coordinate and collision contracts
 
@@ -6,7 +6,7 @@ WorldPosition is chunk X/Z int64 plus local X/Z double in [0,16), with Y double.
 
 PlayerPhysics keeps a local-double AABB and an origin chunk. Queries translate local voxel indices to absolute int64 block coordinates. Swept collision examines forward faces intersecting the swept interval, requiring strict overlap in the other axes. Allowed displacement stays between zero and requested delta. X/Z never modify Y; only downward contact sets grounded. Overlap recovery is separate, tries six directions and uses the nearest clear displacement with fixed ties. The old solver could choose a positive Y displacement while falling after tiny side penetration; a 2e-5 overlap fixture locks down that regression.
 
-Camera matrices and chunk/outline coordinates are relative to the player origin. Rebase changes the representation, not physical position, velocity or target. The far plane is 384 blocks to accommodate tall terrain across render radius 8. Shader texture hashing receives low/high uint32 words for absolute chunk-block X/Z and performs signed local additions without requiring OpenGL int64 support.
+Camera matrices and chunk/outline coordinates are relative to the player origin. Rebase changes the representation, not physical position, velocity or target. The far plane is 768 blocks for distant radius 24. Shader texture hashing receives low/high uint32 words for absolute chunk-block X/Z and performs signed local additions without OpenGL int64 support.
 
 ## Seed and simplex context
 
@@ -30,6 +30,26 @@ CLI --world/--seed opens world.meta or creates it once. Normal default storage c
 
 ## Streaming, rendering and textures
 
+New worlds use schema 2/terrain-fields-1, storing roughness, mountain mask, valley and plateau configurations, monotone spline points, amplitudes, mask thresholds, clamp bounds and caves flag. Schema 1/simplex-1 remains supported without rewriting it. New seed domains append to the enum, preserving old seeds. --preset and --caves apply at creation; metadata conflicts are rejected.
+
+sampleTerrain(worldX,worldZ,footprint) is the shared continuous height API. Voxel heights floor footprint-1 samples. Terrain-fields-1 blends a monotone continental spline, smooth mountain mask, roughness-controlled hills/ridges, valley shaping and plateau weighting. Flat returns 64 without height noise. Cave carving remains independent of distant sampling.
+
+Each voxel job builds an 18x18 height halo and section occupancy counts. Direct writes bypass gameplay edits. Uniform Stone sections fill contiguously; Air sections are untouched; cave grid extrema conservatively skip uniform cells/sections. Reference generation disables those skips for byte comparison. GenerationState is separate from ChunkState: Requested, Generating, Ready, Cancelled, Failed. Jobs capture immutable configuration and instance/generation revision; cancellation is checked inside generation.
+
+### Heightmap streaming and publication
+
+HeightmapStream owns distant metadata on the main thread. Its jobs share the two generation workers with voxel jobs; two separate workers mesh voxels. Queue locks cover extraction/publication only. Distance/camera priority and aging prefer nearby work; every eighth mixed-queue turn permits distant work. Cancellation tokens are job-specific shared atomics, so superseding a tile cannot redirect an old worker to a new token.
+
+Completed results are pumped every frame, but request/border scans run only when the player chunk or voxel border revision changes (or a failed job needs retry). Publication explicitly retires the opposite CPU representation at that coordinate, preventing immediate reversals from selecting a CPU mesh whose GPU buffers have already been replaced.
+
+Game enables far streaming; World's optional heightmap constructor flag defaults off for existing near-only headless callers. Far radius is 24, with 16x16 tiles and steps 2/4/8; no ChunkData is created for far tiles. Hysteresis holds step 2 through radius 13 and step 8 down to radius 18.
+
+All far edges sample footprint 1 and have one-block segments, giving adjacent LODs identical topology. Interiors use their LOD footprint, with transition triangles to fixed edges. Canonical corners remain shared; voxel boundary snapshots supply actual column heights and vertical wedge closure. Eight-block skirts are fallback at outer/voxel boundaries, not a replacement for stitching.
+
+Heightmap meshes use separate 24-byte vertices: local float XYZ, source morph Y, integer layer and face. The shader interpolates interior height over 250 ms; edges remain fixed. New vertices sample the currently displayed previous mesh, including an interrupted morph. Dependent tiles share publication time. Near/far handoffs and boundary dependencies combine upload groups into one transaction; old meshes remain until replacements publish. Mesh-only near records can survive outside voxel retention during handoff without retaining block arrays.
+
+Upload candidates are collected/sorted before starting the soft 2 ms OpenGL budget; otherwise a large Debug queue can exhaust it before the first upload and starve publication. Buffers retire with nonblocking fences. Renderer uses conservative homogeneous AABB frustum culling and polls an eight-slot terrain timer-query ring without waiting. Heightmaps are visual approximations only: no distant collision, targeting, caves or edits.
+
 World maps, journals, records and update groups are owned by the main thread. Two generation and two meshing workers consume immutable snapshots through short queue/result locks. Chunk instance/revision/group tokens reject obsolete results.
 
 Active meshes remain independent of pending job state. Border edits merge affected groups; separate GPU buffers upload within a soft 2 ms budget, then complete groups publish before drawing. Old buffers retire through zero-timeout fence polling. Collision sees edits immediately while targeting is locked until publication.
@@ -45,3 +65,5 @@ Noise goldens, generator byte digests, numerical guards and an allocation-count 
 Physics regressions cover six faces, epsilon contacts, side-overlap recovery, chunk seams, negative coordinates and world limits. Metadata tests cover round trips, random-once reopening, conflicts, unsupported versions and failed atomic writes. OpenGL tests validate layers/UV/AO, rebased texture hashing and terrain/interaction near both world limits.
 
 BloxideNoiseBenchmark records sample throughput, generation/meshing, cold/traversal completion, memory payload, driver spikes and edit publication. Headless upload acknowledgement is simulated; these timings are not gameplay FPS or GPU utilization.
+
+V135 tests compare reference/optimized blocks for all presets/cave modes, halo seams, metadata compatibility, mixed-LOD edges, morph endpoints, winding, cancellation and streaming without far voxel allocation. TerrainBenchmark exports CSV/JSON for LOD on/off and traversal/reversal. Runtime diagnostics separate main-thread phase times, cumulative worker elapsed work and asynchronous GPU terrain time. OpenGL fixtures exercise integer heightmap attributes, morph geometry and six settled moves/reversals with live GPU ownership validation.

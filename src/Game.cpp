@@ -12,6 +12,7 @@
 #include <vector>
 #include <chrono>
 #include <filesystem>
+#include <fstream>
 #include <bloxide/Textures.hpp>
 
 #ifndef BLOXIDE_SOURCE_DIR
@@ -21,7 +22,7 @@
 namespace bloxide {
 class Game {
 public:
-    explicit Game(const WorldSettings& settings,std::int64_t smokeOffset=0):world_(settings){
+    explicit Game(const WorldSettings& settings,std::int64_t smokeOffset=0,bool lod=true,bool requireLod=false):world_(settings,lod),requireLod_(requireLod){
         auto p=WorldPosition::fromAbsolute(double(smokeOffset)+8.5,128,double(smokeOffset)+8.5);
         player_.origin=p.chunk;player_.feet=p.local();
     }
@@ -40,6 +41,7 @@ private:
     bool hudEnabled_ = false;
     PlayerPhysics player_;
     bool spawned_ = false;
+    bool requireLod_=false;
     bool jumpRequested_ = false;
     struct InteractionCommand { bool place; BlockTarget presented; };
     std::vector<InteractionCommand> commands_;
@@ -52,7 +54,7 @@ int Game::run(bool smokeTest) {
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-    window_ = SDL_CreateWindow("Bloxide v1.3.0", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1280, 720, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | (smokeTest ? SDL_WINDOW_HIDDEN : 0));
+    window_ = SDL_CreateWindow("Bloxide v1.3.5", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1280, 720, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | (smokeTest ? SDL_WINDOW_HIDDEN : 0));
     if (!window_) { std::cerr << SDL_GetError() << std::endl; SDL_Quit(); return 1; }
     context_ = SDL_GL_CreateContext(window_);
     if (!context_ || !gladLoadGLLoader(reinterpret_cast<GLADloadproc>(SDL_GL_GetProcAddress))) {
@@ -69,6 +71,7 @@ int Game::run(bool smokeTest) {
         renderer_.shutdown(); SDL_GL_DeleteContext(context_); SDL_DestroyWindow(window_); SDL_Quit(); return 1;
     }
     if(smokeTest&&!renderer_.validateTexturesForTests()){std::cerr<<"Texture Array/mipmap validation failed"<<std::endl;renderer_.shutdown();SDL_GL_DeleteContext(context_);SDL_DestroyWindow(window_);SDL_Quit();return 3;}
+    if(smokeTest&&!renderer_.validateHeightmapForTests()){std::cerr<<"Heightmap integer attributes/morph validation failed"<<std::endl;renderer_.shutdown();SDL_GL_DeleteContext(context_);SDL_DestroyWindow(window_);SDL_Quit();return 3;}
     SDL_SetRelativeMouseMode(smokeTest ? SDL_FALSE : SDL_TRUE);
     camera_.setPosition(player_.eye());
     int smokeFrames = 0;
@@ -80,26 +83,36 @@ int Game::run(bool smokeTest) {
     std::uint64_t smokeRevision=0;
     int remeshFrames=0;
     int smokeEditCount=0,phaseVisibleFrames=0;
+    int smokeTraversal=0;
     double breakPublishMs=0;
     bool smokeAimed=false,outlineChecked=false;
     std::size_t outlinePixels=0;
     double maxFrameMs=0;
     std::uint64_t previous = SDL_GetPerformanceCounter();
+    auto profileDir=root/"benchmark";std::filesystem::create_directories(profileDir);
+    auto profileName=world_.settings().generatorVersion+"-"+world_.settings().preset+"-"+std::to_string(world_.settings().seed)+"-"+std::to_string(smokeChunk.x)+"-"+std::to_string(smokeChunk.z)+(requireLod_?"-lod-regression":"");
+    std::ofstream frameCsv(profileDir/(profileName+"-runtime.csv"));
+    frameCsv<<"frame,frame_ms,world_driver_ms,upload_submit_ms,render_submit_ms,gpu_terrain_ms,draws,near_ready,far_visible,generation_cpu_total_ms,meshing_cpu_total_ms,heightmap_cpu_total_ms\n";
+    std::vector<double> measuredFrames;
     while (running_) {
         SDL_Event e;
         while (SDL_PollEvent(&e)) event(e);
         const std::uint64_t now = SDL_GetPerformanceCounter();
         const float dt = std::min(0.1f, static_cast<float>(now - previous) / static_cast<float>(SDL_GetPerformanceFrequency()));
         previous = now;
+        auto worldStart=std::chrono::steady_clock::now();
         world_.updateAt(player_.worldEye(),camera_.forward());
+        double worldMs=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-worldStart).count();
         renderer_.synchronize(world_.loadedCoords());
+        const auto pendingUploads=world_.takePendingUploads();
         const auto uploadStart=std::chrono::steady_clock::now();
-        for (const auto& upload : world_.takePendingUploads()) {
+        for (const auto& upload : pendingUploads) {
             if(std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-uploadStart).count()>=2.0)break;
             if (renderer_.upload(upload)) world_.markUploaded(upload);
         }
         for(const auto& group:world_.readyGroups())
             if(renderer_.publish(group)) world_.commitGroup(group);
+        double uploadMs=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-uploadStart).count();
         update(dt);
         if(smokeTest&&spawned_&&!smokeAimed){camera_.rotate(0,-35);smokeAimed=true;}
         for(auto& command:commands_) {
@@ -112,8 +125,12 @@ int Game::run(bool smokeTest) {
         int width = 0, height = 0;
         SDL_GetWindowSize(window_, &width, &height);
         const auto renderedChunks=world_.renderChunksAt(player_.worldEye(),camera_.forward());
+        if(smokeTest&&!renderer_.validatePublishedForTests(renderedChunks)){std::cerr<<"CPU/GPU mesh ownership mismatch during OpenGL regression"<<std::endl;break;}
+        const auto farCount=std::count_if(renderedChunks.begin(),renderedChunks.end(),[](const RenderChunk& c){return c.mesh->heightmap;});
+        auto renderStart=std::chrono::steady_clock::now();
         renderer_.render(camera_,renderedChunks,width,height);
-        if(smokeTest&&target.hit&&!outlineChecked&&world_.stats().ready>=289){
+        double renderMs=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-renderStart).count();
+        if(smokeTest&&target.hit&&!outlineChecked&&world_.stats().ready>=289&&(!requireLod_||farCount>=2000)){
             const auto blackPixels=[&](){
                 std::vector<unsigned char> pixels(static_cast<std::size_t>(width*height*3));
                 glReadPixels(0,0,width,height,GL_RGB,GL_UNSIGNED_BYTE,pixels.data());
@@ -142,21 +159,25 @@ int Game::run(bool smokeTest) {
                 std::vector<unsigned char> raw(image.rgba.size());
                 glReadPixels(0,0,width,height,GL_RGBA,GL_UNSIGNED_BYTE,raw.data());
                 for(int y=0;y<height;++y)std::copy_n(raw.begin()+std::size_t(height-1-y)*width*4,width*4,image.rgba.begin()+std::size_t(y)*width*4);
-                auto diagnostics=root/"diagnostics"/("seed-"+std::to_string(world_.settings().seed)+"-"+std::to_string(smokeChunk.x)+"-"+std::to_string(smokeChunk.z));
+                auto diagnostics=root/"diagnostics"/(world_.settings().generatorVersion+"-"+world_.settings().preset+"-seed-"+std::to_string(world_.settings().seed)+"-"+std::to_string(smokeChunk.x)+"-"+std::to_string(smokeChunk.z));
                 std::filesystem::create_directories(diagnostics);
                 TextureGenerator::writePng(diagnostics/filename,image);
             };
             renderer_.renderTarget(camera_,target,width,height);
             saveImage("textures_near.png");
-            Camera far=camera_;far.rotate(0,45);
+            Camera far=camera_;far.rotate(0,28);
+            auto overview=camera_.position();overview[1]+=90;overview[2]+=100;far.setPosition(overview);
             renderer_.render(far,renderedChunks,width,height);
             renderer_.renderTarget(far,{},width,height);
             saveImage("textures_far.png");
+            if(requireLod_)saveImage("terrain_lod_overview.png");
             renderer_.render(camera_,renderedChunks,width,height);
         }
         if(spawned_&&captured_)renderer_.renderTarget(camera_,target,width,height);
         presentedTarget_=target;
         if (smokeTest) {
+            if(smokeFrames%300==0){auto s=world_.stats();std::cout<<"smoke_frame="<<smokeFrames<<" ready="<<s.ready<<" near_upload_pending="<<s.pendingUploads
+                <<" far_upload_pending="<<s.farPendingUploads<<" far_group_ready="<<s.farGroupReady<<" groups="<<s.publicationGroups<<" far_jobs="<<s.heightmapJobs<<" far_stale="<<s.heightmapStale<<std::endl;}
             if (spawned_ && renderer_.drawCalls() > 0) {
                 std::vector<unsigned char> pixels(static_cast<std::size_t>(width * height * 3));
                 glReadPixels(0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, pixels.data());
@@ -164,7 +185,12 @@ int Game::run(bool smokeTest) {
                 for (std::size_t p = 0; p < pixels.size(); p += 3)
                     if(std::abs(int(pixels[p])-122)>3||std::abs(int(pixels[p+1])-186)>3||std::abs(int(pixels[p+2])-235)>3)++terrainPixels;
                 if(smokeEditing&&terrainPixels<=1000){std::cerr<<"Terrain vanished during render regression"<<std::endl;break;}
-                if(!smokeEditing&&outlineChecked&&terrainPixels>1000&&world_.targetable(smokeX,smokeZ)&&world_.targetable(smokeX+1,smokeZ)) {
+                if(requireLod_&&!smokeEditing&&outlineChecked&&smokeTraversal<6&&world_.heightmapSettled()&&world_.stats().ready==289&&farCount>=2000){
+                    const int path[]{16,32,16,0,-16,0};
+                    auto next=WorldPosition::fromAbsolute(double(smokeChunk.x*16+path[smokeTraversal])+8.5,128,double(smokeChunk.z*16)+8.5);
+                    player_.origin=next.chunk;player_.feet=next.local();player_.velocity={0,0,0};spawned_=false;++smokeTraversal;
+                }
+                if(!smokeEditing&&spawned_&&(!requireLod_||(smokeTraversal==6&&world_.heightmapSettled()))&&outlineChecked&&terrainPixels>1000&&world_.targetable(smokeX,smokeZ)&&world_.targetable(smokeX+1,smokeZ)) {
                     for(auto& c:world_.renderChunksAt(player_.worldEye(),camera_.forward()))
                         if(c.coord==smokeChunk)smokeRevision=c.mesh->revision;
                     world_.setMeshDelayForTests(80);
@@ -201,6 +227,7 @@ int Game::run(bool smokeTest) {
                     std::cout<<"outline_pixels="<<outlinePixels<<" max_frame_ms="<<maxFrameMs
                              <<" break_publish_ms="<<breakPublishMs<<" edits="<<smokeEditCount
                              <<" texture_load_ms="<<renderer_.textureLoadMs()<<" texture_upload_submit_ms="<<renderer_.textureUploadMs()<<std::endl;
+                    std::cout<<"heightmap_tiles="<<farCount<<" gpu_terrain_ms="<<renderer_.gpuTerrainMs()<<" lod_reversals="<<smokeTraversal<<std::endl;
                     running_ = false;
                     }
                 }
@@ -209,7 +236,18 @@ int Game::run(bool smokeTest) {
             SDL_Delay(1);
         }
         SDL_GL_SwapWindow(window_);
+        double measuredMs=static_cast<double>(SDL_GetPerformanceCounter()-now)*1000.0/SDL_GetPerformanceFrequency();
+        measuredFrames.push_back(measuredMs);
+        auto metrics=world_.stats();
+        frameCsv<<measuredFrames.size()<<','<<measuredMs<<','<<worldMs<<','<<uploadMs<<','<<renderMs<<','<<renderer_.gpuTerrainMs()<<','<<renderer_.drawCalls()<<','<<metrics.ready<<','<<farCount<<','<<metrics.generationCpuMs<<','<<metrics.meshingCpuMs<<','<<metrics.heightmapCpuMs<<'\n';
         if(smokeTest)maxFrameMs=std::max(maxFrameMs,static_cast<double>(SDL_GetPerformanceCounter()-now)*1000.0/SDL_GetPerformanceFrequency());
+    }
+    if(!measuredFrames.empty()){
+        std::sort(measuredFrames.begin(),measuredFrames.end());
+        std::ofstream summary(profileDir/(profileName+"-summary.json"));
+        summary<<"{\"diagnostic_run\": "<<(smokeTest?"true":"false")<<", \"frames\": "<<measuredFrames.size()
+            <<", \"p50_ms\": "<<measuredFrames[(measuredFrames.size()-1)*50/100]<<", \"p95_ms\": "<<measuredFrames[(measuredFrames.size()-1)*95/100]
+            <<", \"p99_ms\": "<<measuredFrames[(measuredFrames.size()-1)*99/100]<<", \"gpu_terrain_last_ms\": "<<renderer_.gpuTerrainMs()<<"}\n";
     }
     SDL_SetRelativeMouseMode(SDL_FALSE);
     renderer_.shutdown();
@@ -288,26 +326,32 @@ void Game::interact(bool place) {
 
 int main(int argc,char** argv){
     try{
-        bool smoke=false;std::optional<std::uint64_t> seed;std::filesystem::path worldDir;
+        bool smoke=false,lod=true,requireLod=false;std::optional<std::uint64_t> seed;std::filesystem::path worldDir;
+        std::optional<std::string> preset;std::optional<bool> caves;
         std::int64_t offset=0;
         for(int i=1;i<argc;++i){
             std::string arg=argv[i];
-            if(arg=="--help"){std::cout<<"Bloxide [--world folder] [--seed uint64-decimal]\nDefault world: SDL user data directory/worlds/default\nOnly seed/config metadata is persisted; block edits remain in RAM.\n";return 0;}
+            if(arg=="--help"){std::cout<<"Bloxide [--world folder] [--seed uint64-decimal] [--preset flat|rolling-hills|mountainous] [--caves on|off] [--no-lod]\nDefault world: SDL user data directory/worlds/default\nOnly seed/config metadata is persisted; block edits remain in RAM.\n";return 0;}
             if(arg=="--smoke-test")smoke=true;
             else if(arg=="--seed"&&i+1<argc)seed=bloxide::WorldSettings::parseSeed(argv[++i]);
             else if(arg=="--world"&&i+1<argc)worldDir=argv[++i];
+            else if(arg=="--preset"&&i+1<argc)preset=argv[++i];
+            else if(arg=="--caves"&&i+1<argc){std::string v=argv[++i];if(v!="on"&&v!="off")throw std::invalid_argument("--caves requires on|off");caves=v=="on";}
+            else if(arg=="--no-lod")lod=false;
+            else if(arg=="--require-lod")requireLod=true;
             else if(arg=="--smoke-origin"&&i+1<argc){std::string v=argv[++i];std::size_t used=0;offset=std::stoll(v,&used);if(used!=v.size())throw std::invalid_argument("invalid smoke origin");}
             else throw std::invalid_argument("usage: Bloxide [--world folder] [--seed uint64] [--smoke-test]");
         }
         if(offset&&!smoke)throw std::invalid_argument("--smoke-origin is test-only");
+        if(requireLod&&(!smoke||!lod))throw std::invalid_argument("--require-lod requires --smoke-test and enabled LOD");
         if(worldDir.empty()){
             char* path=smoke?SDL_GetBasePath():SDL_GetPrefPath("Bloxide","Bloxide");
             if(!path)throw std::runtime_error(SDL_GetError());
-            worldDir=std::filesystem::path(path)/(smoke?"testing/smoke-world-"+std::to_string(offset)+"-"+std::to_string(seed.value_or(130)):"worlds/default");SDL_free(path);
+            worldDir=std::filesystem::path(path)/(smoke?"testing/smoke-world-"+preset.value_or("legacy")+"-"+std::to_string(offset)+"-"+std::to_string(seed.value_or(130)):"worlds/default");SDL_free(path);
             if(smoke&&!seed)seed=130;
         }
-        auto settings=bloxide::WorldSettings::open(worldDir,seed);
+        auto settings=bloxide::WorldSettings::open(worldDir,seed,preset,caves);
         std::cout<<"world_seed="<<settings.seed<<" generator="<<settings.generatorVersion<<" metadata="<<(worldDir/"world.meta").string()<<std::endl;
-        bloxide::Game game(settings,offset);return game.run(smoke);
+        bloxide::Game game(settings,offset,lod,requireLod);return game.run(smoke);
     }catch(const std::exception& e){std::cerr<<e.what()<<std::endl;return 1;}
 }

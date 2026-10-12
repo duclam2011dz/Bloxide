@@ -59,7 +59,7 @@ std::array<float, 16> Camera::projectionMatrix(float aspect) const noexcept {
     const float fov = 70.0f * Pi / 180.0f;
     const float f = 1.0f / std::tan(fov / 2.0f);
     const float nearPlane = 0.1f;
-    const float farPlane = 384.0f;
+    const float farPlane = 768.0f;
     return {f / aspect, 0.0f, 0.0f, 0.0f,
             0.0f, f, 0.0f, 0.0f,
             0.0f, 0.0f, (farPlane + nearPlane) / (nearPlane - farPlane), -1.0f,

@@ -1,5 +1,66 @@
 # Bloxide performance and validation
 
+## v1.3.5 - 2026-10-12
+
+Environment: Windows/MSYS2 UCRT64, GCC 16.1, Intel Core i5-6400 @ 2.70 GHz (4 cores/4 threads), NVIDIA GeForce GT 720, driver 27.21.14.6192. Values below are local observations, not portable FPS guarantees.
+
+### Methodology and correctness
+
+Before refactoring, a v1.3.0 Release quick baseline at seed 130 measured generation 1.29102 ms/chunk, meshing 5.29347 ms/chunk, cold streaming 692.284 ms and edit publication 18.0612 ms. The new height fields change the terrain workload, so these are historical reference values, not an equivalent-work speedup comparison.
+
+The new full TerrainBenchmark uses seed 130, 100,000 height samples, 32 generation/standalone-mesh tiles, 120 steady driver samples, and six settled chunk-center moves/reversals. Optimized/reference generation shares the same configuration and coordinates. Streaming runs compare far LOD enabled/disabled on the same terrain-fields-1 world; enabling LOD extends the visual radius from 8 to 24, so those runs intentionally render different extents. Headless upload acknowledgements are simulated.
+
+Simplex-1 keeps its seed-130 chunk-(0,0) digest 2061680697937486093. Terrain-fields-1 pins 15604160045169882075. Separate processes, reversed order and threaded probes match exactly for seeds 0, 130 and uint64 max; Debug and Release outputs match for both generators. Optimized/reference block arrays match across all presets, cave modes, negative coordinates and near-limit coordinates. Metadata tests verify that opening a legacy world does not rewrite its file.
+
+### Release measurements
+
+| Metric | Observed |
+|---|---:|
+| Shared terrain height sampling | 1,772.95 ns/sample |
+| Reference generation | 1.52302 ms/chunk |
+| Optimized generation | 1.29369 ms/chunk |
+| Heightmap step 2 / 4 / 8 | 0.821525 / 0.414397 / 0.355922 ms/tile |
+| Standalone tile payload, step 2 / 4 / 8 | 19,584 / 12,096 / 10,368 bytes |
+| Standalone triangles, step 2 / 4 / 8 | 416 / 240 / 200 |
+
+Optimized generation was approximately 15% faster than reference in this run. This is a single sequential local measurement, not a statistical guarantee; cache and scheduling effects can change results. Standalone tiles include all four fallback skirts; production tiles generally need fewer.
+
+| Headless pipeline metric | Far LOD off | Far LOD on |
+|---|---:|---:|
+| Cold stream | 649.332 ms | 726.977 ms |
+| Active CPU mesh payload | 7,608,800 bytes | 18,224,700 bytes |
+| Triangle count | 380,440 | 644,118 |
+| Far vertices | 0 | 310,492 |
+| Voxel records at cold completion | 441 | 441 |
+| Generation worker elapsed sum | 599.845 ms | 623.097 ms |
+| Meshing worker elapsed sum | 1,245.09 ms | 1,376.68 ms |
+| Heightmap worker elapsed sum | 0 ms | 611.059 ms |
+| Steady driver p50 / p95 / p99 | 0.0431 / 0.0456 / 0.0480 ms | 0.2282 / 0.2508 / 0.2998 ms |
+| Six settled moves/reversals | 154.796 ms | 417.815 ms |
+| Edit to publish | 15.8315 ms | 15.3049 ms |
+| Maximum driver iteration | 7.507 ms | 32.2328 ms |
+| Stale voxel / heightmap results | 0 / 0 | 0 / 1 |
+
+Worker elapsed sums overlap across threads and can include scheduling/lock delay; they are not process CPU utilization and must not be added to wall time. Driver percentiles measure main-thread headless orchestration, not gameplay frames. Payload excludes capacities, maps, snapshots, pools, pending meshes, retired buffers and GPU overhead. 441 block arrays alone occupy 28,901,376 bytes; halo/section metadata adds 680 bytes per chunk before alignment and other fields.
+
+Profiling an earlier implementation found approximately 1.16 ms steady driver p50 with far LOD: it rescanned all distant tiles each frame. Processing results while rebuilding requests only when center/border revision changes reduced this to 0.2282 ms in the final run. The earlier short run is indicative, not a controlled statistical comparison.
+
+### OpenGL diagnostics and visual review
+
+The real OpenGL LOD regression waits for 2,112 far candidates, performs six chunk-center moves/reversals, checks CPU/GPU representation tokens every frame, then runs delayed break/place and buffer-retirement checks. A separate raster fixture validates integer heightmap attributes and morph endpoints. Full-resolution shared edges, winding and voxel wedge closure also have geometry tests.
+
+The standalone Release traversal diagnostic completed with 2,112 far candidates, 144 terrain draws after frustum culling, 14 old-mesh remesh frames, six reversals and zero stale voxel results. Artificially delayed edit publication was 126.314 ms; the latest asynchronously available GPU terrain pass was 1.80429 ms. Maximum diagnostic frame time was 637.238 ms. These numbers include cold startup, screenshots, readbacks, VSync and an injected 80 ms meshing delay; they are not steady gameplay FPS.
+
+Runtime CSV/JSON exports CPU frame/phase timings, cumulative worker work and asynchronous GPU pass time under the executable's benchmark directory. Far candidate count precedes renderer frustum culling and is not actual draw visibility. GPU elapsed queries do not expose shader-stage hardware utilization or driver VRAM residency. The query ring and retirement fences are polled without glFinish or a blocking result wait.
+
+Near and elevated LOD overview captures were reviewed for terrain shape, texture repetition and transitions. Distant heightmaps deliberately omit caves and edits; full voxel detail returns inside radius 8. Skirts/wedge closure hide transitions but do not make distant terrain a faithful cave or edited-world representation.
+
+### Regression discoveries
+
+Testing caught and fixed two-direction CPU/GPU ownership retention during handoff, inverted closure/skirt winding, and Debug upload starvation: queue sorting previously consumed the entire 2 ms budget before any OpenGL call. Ownership/reversal tests additionally passed three consecutive Release runs.
+
+Final Release CTest passed 13/13 in 11.97 s; Debug passed 13/13 in 41.09 s. Both include actual OpenGL traversal/reversal, morph rasterization, delayed edit swapping, outline occlusion and near-limit rendering. Strict CPU/GPU mesh-token checks run throughout the smoke frames. The probe comparison covers both generator versions at all three seeds on the supported toolchain.
+
 ## v1.3.0 - 2026-10-11
 
 Environment: Windows, MSYS2 UCRT64 GCC 16.1, Intel Core i5-6400 @ 2.70 GHz (4 cores/4 threads), NVIDIA GeForce GT 720, driver 27.21.14.6192. Measurements are local observations, not portable performance guarantees.

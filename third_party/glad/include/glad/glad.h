@@ -64,6 +64,16 @@ typedef unsigned long long GLuint64;
 #define GL_TEXTURE_WIDTH 0x1000
 #define GL_TEXTURE_HEIGHT 0x1001
 #define GL_TEXTURE_DEPTH 0x8071
+#define GL_TIME_ELAPSED 0x88BF
+#define GL_QUERY_RESULT_AVAILABLE 0x8867
+#define GL_QUERY_RESULT 0x8866
+extern void (*glUniform1f)(GLint,GLfloat);
+extern void (*glGenQueries)(GLsizei,GLuint*);
+extern void (*glDeleteQueries)(GLsizei,const GLuint*);
+extern void (*glBeginQuery)(GLenum,GLuint);
+extern void (*glEndQuery)(GLenum);
+extern void (*glGetQueryObjectiv)(GLuint,GLenum,GLint*);
+extern void (*glGetQueryObjectui64v)(GLuint,GLenum,GLuint64*);
 
 typedef void* (*GLADloadproc)(const char* name);
 int gladLoadGLLoader(GLADloadproc load);

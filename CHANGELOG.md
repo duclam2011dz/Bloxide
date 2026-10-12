@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.3.5] - 2026-10-12
+
+- Added terrain-fields-1 with continental spline, roughness, mountain masks, ridges, valleys, plateau blending and flat/rolling-hills/mountainous presets.
+- Added schema-2 configuration and --preset/--caves creation options while preserving schema-1/simplex-1 worlds without migration.
+- Added height halos, section summaries, contiguous uniform fills, conservative cave skipping and in-job cancellation/revision checks.
+- Added heightmap-only terrain to radius 24 using world-aligned 2/4/8-block LODs, hysteresis, stitched edges and voxel boundary closure.
+- Added 250 ms interior geomorphing, shared publication transactions, handoff fallback meshes and nonblocking GPU retirement.
+- Kept full voxels/caves/edits in radius 8; distant terrain represents only the original surface.
+- Added GPU terrain timer queries, frustum culling, runtime CSV/JSON and terrain/LOD benchmarks.
+- Fixed upload starvation caused by counting queue preparation against the 2 ms OpenGL budget.
+- Added preset/reference-output, metadata, LOD/morph, streaming/reproducibility and OpenGL regressions.
+
 ## [1.3.0] - 2026-10-11
 
 - Fixed side-contact upward snapping with swept face collision, constrained displacement and separate overlap recovery.

@@ -1,5 +1,12 @@
 #include <stddef.h>
 #include <glad/glad.h>
+void (*glUniform1f)(GLint,GLfloat)=NULL;
+void (*glGenQueries)(GLsizei,GLuint*)=NULL;
+void (*glDeleteQueries)(GLsizei,const GLuint*)=NULL;
+void (*glBeginQuery)(GLenum,GLuint)=NULL;
+void (*glEndQuery)(GLenum)=NULL;
+void (*glGetQueryObjectiv)(GLuint,GLenum,GLint*)=NULL;
+void (*glGetQueryObjectui64v)(GLuint,GLenum,GLuint64*)=NULL;
 void (*glTexImage3D)(GLenum,GLint,GLint,GLsizei,GLsizei,GLsizei,GLint,GLenum,GLenum,const void*) = NULL;
 void (*glTexSubImage3D)(GLenum,GLint,GLint,GLint,GLint,GLsizei,GLsizei,GLsizei,GLenum,GLenum,const void*) = NULL;
 void (*glGenerateMipmap)(GLenum) = NULL;
@@ -39,6 +46,8 @@ void (*glEnableVertexAttribArray)(GLuint) = NULL;
 #define LOAD(name) do { *(void **)(&name) = load(#name); if (!name) return 0; } while (0)
 int gladLoadGLLoader(GLADloadproc load) {
     if (!load) return 0;
+    LOAD(glUniform1f);LOAD(glGenQueries);LOAD(glDeleteQueries);LOAD(glBeginQuery);LOAD(glEndQuery);
+    LOAD(glGetQueryObjectiv);LOAD(glGetQueryObjectui64v);
     LOAD(glTexImage3D); LOAD(glTexSubImage3D); LOAD(glGenerateMipmap);
     LOAD(glActiveTexture); LOAD(glUniform1i); LOAD(glUniform1ui);
     LOAD(glUniform2ui);

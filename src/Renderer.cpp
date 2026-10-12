@@ -8,6 +8,7 @@
 #include <unordered_set>
 #include <bloxide/Textures.hpp>
 #include <chrono>
+#include <filesystem>
 namespace bloxide {
 namespace {
 std::string readFile(const std::string& path){std::ifstream f(path);std::stringstream s;s<<f.rdbuf();return s.str();}
@@ -69,6 +70,9 @@ void Renderer::shutdown() {
     if(overlayVbo_)glDeleteBuffers(1,&overlayVbo_);
     if(overlayVao_)glDeleteVertexArrays(1,&overlayVao_);
     if(program_)glDeleteProgram(program_);
+    if(heightmapProgram_)glDeleteProgram(heightmapProgram_);
+    if(queries_[0])glDeleteQueries(8,queries_.data());
+    queries_.fill(0);queryPending_.fill(false);heightmapProgram_=0;
     if(overlayProgram_)glDeleteProgram(overlayProgram_);
     if(textures_)glDeleteTextures(1,&textures_);
     textures_=0;
@@ -95,6 +99,8 @@ bool Renderer::initialize(const std::string& vp,const std::string& fp,const std:
     textureUploadMs_=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count();
     if(glGetError()!=GL_NO_ERROR){std::cerr<<"Texture Array upload failed"<<std::endl;return false;}
     program_=program(readFile(vp),readFile(fp));if(!program_)return false;
+    heightmapProgram_=program(readFile((std::filesystem::path(vp).parent_path()/"heightmap.vert").string()),readFile(fp));if(!heightmapProgram_)return false;
+    glGenQueries(8,queries_.data());
     overlayProgram_=program("#version 330 core\nlayout(location=0) in vec4 clip;void main(){gl_Position=clip;}\n",
                             "#version 330 core\nuniform vec3 color;out vec4 frag;void main(){frag=vec4(color,1);}\n");
     if(!overlayProgram_)return false;
@@ -187,14 +193,52 @@ bool Renderer::upload(const ChunkUpload& u) {
     GpuMesh m;
     glGenVertexArrays(1,&m.vao);glGenBuffers(1,&m.vbo);glGenBuffers(1,&m.ebo);
     glBindVertexArray(m.vao);glBindBuffer(GL_ARRAY_BUFFER,m.vbo);
-    glBufferData(GL_ARRAY_BUFFER,static_cast<GLsizeiptr>(u.mesh->vertices.size()*sizeof(ChunkMeshVertex)),u.mesh->vertices.data(),GL_STATIC_DRAW);
+    if(u.mesh->heightmap)glBufferData(GL_ARRAY_BUFFER,static_cast<GLsizeiptr>(u.mesh->heightVertices.size()*sizeof(HeightVertex)),u.mesh->heightVertices.data(),GL_STATIC_DRAW);
+    else glBufferData(GL_ARRAY_BUFFER,static_cast<GLsizeiptr>(u.mesh->vertices.size()*sizeof(ChunkMeshVertex)),u.mesh->vertices.data(),GL_STATIC_DRAW);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,m.ebo);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER,static_cast<GLsizeiptr>(u.mesh->indices.size()*sizeof(std::uint32_t)),u.mesh->indices.data(),GL_STATIC_DRAW);
-    glVertexAttribIPointer(0,1,GL_UNSIGNED_INT,sizeof(ChunkMeshVertex),nullptr);glEnableVertexAttribArray(0);glBindVertexArray(0);
+    if(u.mesh->heightmap){
+        glVertexAttribPointer(0,4,GL_FLOAT,GL_FALSE,sizeof(HeightVertex),nullptr);glEnableVertexAttribArray(0);
+        glVertexAttribIPointer(1,1,GL_UNSIGNED_INT,sizeof(HeightVertex),reinterpret_cast<void*>(offsetof(HeightVertex,layer)));glEnableVertexAttribArray(1);
+        glVertexAttribIPointer(2,1,GL_UNSIGNED_INT,sizeof(HeightVertex),reinterpret_cast<void*>(offsetof(HeightVertex,face)));glEnableVertexAttribArray(2);
+    }else {glVertexAttribIPointer(0,1,GL_UNSIGNED_INT,sizeof(ChunkMeshVertex),nullptr);glEnableVertexAttribArray(0);}
+    glBindVertexArray(0);
     if(glGetError()!=GL_NO_ERROR||!m.vao||!m.vbo||!m.ebo){destroy(m);return false;}
     m.indexCount=static_cast<std::uint32_t>(u.mesh->indices.size());m.instanceId=u.mesh->instanceId;m.revision=u.mesh->revision;
+    m.heightmap=u.mesh->heightmap;
     if(existing!=pending_.end())destroy(existing->second);
     pending_[u.coord]=m;uploadedBytes_+=u.mesh->byteSize();return true;
+}
+bool Renderer::validateHeightmapForTests()const{
+    assertThread();
+    HeightVertex vertices[]{{0,4,0,0,0,2},{0,4,4,0,0,2},{8,4,4,0,0,2},{8,4,0,0,0,2}};
+    std::uint32_t indices[]{0,1,2,0,2,3};GLuint vao=0,vbo=0,ebo=0;
+    glGenVertexArrays(1,&vao);glGenBuffers(1,&vbo);glGenBuffers(1,&ebo);glBindVertexArray(vao);
+    glBindBuffer(GL_ARRAY_BUFFER,vbo);glBufferData(GL_ARRAY_BUFFER,sizeof(vertices),vertices,GL_STATIC_DRAW);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,ebo);glBufferData(GL_ELEMENT_ARRAY_BUFFER,sizeof(indices),indices,GL_STATIC_DRAW);
+    glVertexAttribPointer(0,4,GL_FLOAT,GL_FALSE,sizeof(HeightVertex),nullptr);glEnableVertexAttribArray(0);
+    glVertexAttribIPointer(1,1,GL_UNSIGNED_INT,sizeof(HeightVertex),reinterpret_cast<void*>(offsetof(HeightVertex,layer)));glEnableVertexAttribArray(1);
+    glVertexAttribIPointer(2,1,GL_UNSIGNED_INT,sizeof(HeightVertex),reinterpret_cast<void*>(offsetof(HeightVertex,face)));glEnableVertexAttribArray(2);
+    glUseProgram(heightmapProgram_);glViewport(0,0,128,128);glDisable(GL_CULL_FACE);
+    std::array<float,16> projection{1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
+    std::array<float,16> view{0.25f,0,0,0,0,0.125f,0,0,0,0.25f,0,0,-1,-0.5f,0,1};
+    glUniformMatrix4fv(glGetUniformLocation(heightmapProgram_,"uView"),1,GL_FALSE,view.data());
+    glUniformMatrix4fv(glGetUniformLocation(heightmapProgram_,"uProjection"),1,GL_FALSE,projection.data());
+    glUniform3f(glGetUniformLocation(heightmapProgram_,"uChunkOrigin"),0,0,0);
+    glUniform1i(glGetUniformLocation(heightmapProgram_,"uBlockTextures"),0);
+    glUniform1ui(glGetUniformLocation(heightmapProgram_,"uTextureSeed"),textureSeed_);
+    glUniform2ui(glGetUniformLocation(heightmapProgram_,"uChunkBlockX"),0,0);glUniform2ui(glGetUniformLocation(heightmapProgram_,"uChunkBlockZ"),0,0);
+    bool correct=true;
+    for(float morph:{0.0f,1.0f}){
+        glClearColor(0,0,0,1);glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);glUniform1f(glGetUniformLocation(heightmapProgram_,"uMorph"),morph);
+        glDrawElements(GL_TRIANGLES,6,GL_UNSIGNED_INT,nullptr);
+        unsigned char low[3]{},high[3]{};glReadPixels(64,40,1,1,GL_RGB,GL_UNSIGNED_BYTE,low);glReadPixels(64,104,1,1,GL_RGB,GL_UNSIGNED_BYTE,high);
+        bool lowHit=low[0]||low[1]||low[2],highHit=high[0]||high[1]||high[2];
+        correct&=morph==0?(lowHit&&!highHit):(!lowHit&&highHit);
+    }
+    correct&=glGetError()==GL_NO_ERROR;
+    glBindVertexArray(0);glDeleteBuffers(1,&ebo);glDeleteBuffers(1,&vbo);glDeleteVertexArrays(1,&vao);glEnable(GL_CULL_FACE);
+    return correct;
 }
 bool Renderer::publish(const UploadGroup& group) {
     assertThread();
@@ -208,6 +252,15 @@ void Renderer::synchronize(const std::vector<ChunkCoord>& loaded) {
     for(auto it=pending_.begin();it!=pending_.end();)if(!keep.count(it->first)){destroy(it->second);it=pending_.erase(it);}else ++it;
     collectRetired();
 }
+bool Renderer::validatePublishedForTests(const std::vector<RenderChunk>& chunks)const{
+    assertThread();
+    for(auto& c:chunks){
+        auto it=meshes_.find(c.coord);
+        if(it==meshes_.end()||it->second.instanceId!=c.mesh->instanceId||it->second.revision!=c.mesh->revision||
+            it->second.heightmap!=c.mesh->heightmap)return false;
+    }
+    return true;
+}
 void Renderer::render(const Camera& camera,const std::vector<RenderChunk>& chunks,int w,int h) {
     assertThread();drawCalls_=0;if(w<=0||h<=0)return;
     glViewport(0,0,w,h);glClearColor(0.48f,0.73f,0.92f,1);glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);glUseProgram(program_);
@@ -217,15 +270,34 @@ void Renderer::render(const Camera& camera,const std::vector<RenderChunk>& chunk
     auto view=camera.viewMatrix(),projection=camera.projectionMatrix(static_cast<float>(w)/h);
     glUniformMatrix4fv(glGetUniformLocation(program_,"uView"),1,GL_FALSE,view.data());
     glUniformMatrix4fv(glGetUniformLocation(program_,"uProjection"),1,GL_FALSE,projection.data());
+    auto q=queryCursor_%8;bool timed=false;
+    if(queryPending_[q]){GLint ready=0;glGetQueryObjectiv(queries_[q],GL_QUERY_RESULT_AVAILABLE,&ready);
+        if(ready){GLuint64 ns=0;glGetQueryObjectui64v(queries_[q],GL_QUERY_RESULT,&ns);gpuTerrainMs_=double(ns)/1e6;queryPending_[q]=false;}}
+    if(!queryPending_[q]){glBeginQuery(GL_TIME_ELAPSED,queries_[q]);timed=true;}
     for(auto& c:chunks){
         auto it=meshes_.find(c.coord);
         if(it==meshes_.end()||it->second.indexCount==0||it->second.instanceId!=c.mesh->instanceId||it->second.revision!=c.mesh->revision)continue;
-        glUniform3f(glGetUniformLocation(program_,"uChunkOrigin"),static_cast<float>((c.coord.x-camera.origin().x)*16),0,static_cast<float>((c.coord.z-camera.origin().z)*16));
+        // Conservative homogeneous AABB frustum test, relative to the floating origin.
+        float ox=float((c.coord.x-camera.origin().x)*16),oz=float((c.coord.z-camera.origin().z)*16);
+        std::array<Clip,8> corners{};
+        for(int i=0;i<8;++i)corners[i]=transform(projection,transform(view,{ox+((i&1)?16.0f:0.0f),(i&2)?256.0f:0.0f,oz+((i&4)?16.0f:0.0f),1}));
+        bool culled=false;
+        for(int axis=0;axis<3;++axis)for(float sign:{-1.0f,1.0f}){
+            bool outside=true;for(auto&corner:corners)outside&=sign*corner[axis]>corner[3];culled|=outside;
+        }
+        if(culled)continue;
+        auto selected=it->second.heightmap?heightmapProgram_:program_;glUseProgram(selected);
+        glUniform1i(glGetUniformLocation(selected,"uBlockTextures"),0);glUniform1ui(glGetUniformLocation(selected,"uTextureSeed"),textureSeed_);
+        glUniformMatrix4fv(glGetUniformLocation(selected,"uView"),1,GL_FALSE,view.data());
+        glUniformMatrix4fv(glGetUniformLocation(selected,"uProjection"),1,GL_FALSE,projection.data());
+        if(it->second.heightmap)glUniform1f(glGetUniformLocation(selected,"uMorph"),c.morph);
+        glUniform3f(glGetUniformLocation(selected,"uChunkOrigin"),static_cast<float>((c.coord.x-camera.origin().x)*16),0,static_cast<float>((c.coord.z-camera.origin().z)*16));
         auto bx=static_cast<std::uint64_t>(c.coord.x*16),bz=static_cast<std::uint64_t>(c.coord.z*16);
-        glUniform2ui(glGetUniformLocation(program_,"uChunkBlockX"),static_cast<GLuint>(bx),static_cast<GLuint>(bx>>32));
-        glUniform2ui(glGetUniformLocation(program_,"uChunkBlockZ"),static_cast<GLuint>(bz),static_cast<GLuint>(bz>>32));
+        glUniform2ui(glGetUniformLocation(selected,"uChunkBlockX"),static_cast<GLuint>(bx),static_cast<GLuint>(bx>>32));
+        glUniform2ui(glGetUniformLocation(selected,"uChunkBlockZ"),static_cast<GLuint>(bz),static_cast<GLuint>(bz>>32));
         glBindVertexArray(it->second.vao);glDrawElements(GL_TRIANGLES,it->second.indexCount,GL_UNSIGNED_INT,nullptr);++drawCalls_;
     }
+    if(timed){glEndQuery(GL_TIME_ELAPSED);queryPending_[q]=true;++queryCursor_;}
 }
 void Renderer::renderTarget(const Camera& camera,const BlockTarget& target,int w,int h,bool crosshair) {
     assertThread();if(w<=0||h<=0)return;

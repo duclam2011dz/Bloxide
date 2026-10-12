@@ -12,12 +12,12 @@ int distance(ChunkCoord a,ChunkCoord b) {
 }
 std::array<ChunkCoord,4> adjacent(ChunkCoord c) { return {{{c.x-1,c.z},{c.x+1,c.z},{c.x,c.z-1},{c.x,c.z+1}}}; }
 }
-World::World(const WorldSettings& settings):generator_(settings) {
+World::World(const WorldSettings& settings,bool heightmap):generator_(settings),heightmapEnabled_(heightmap) {
     for(int i=0;i<2;++i) generationThreads_.emplace_back(&World::generationLoop,this);
     for(int i=0;i<2;++i) meshingThreads_.emplace_back(&World::meshingLoop,this);
 }
 World::~World() {
-    stopping_=true; generationCv_.notify_all(); meshingCv_.notify_all();
+    stopping_=true;far_.stop(); generationCv_.notify_all(); meshingCv_.notify_all();
     for(auto& t:generationThreads_) t.join();
     for(auto& t:meshingThreads_) t.join();
 }
@@ -30,11 +30,17 @@ int World::priorityFor(ChunkCoord c,ChunkCoord p,const std::array<float,3>& dir)
     return distance(c,p)*100-static_cast<int>(len>0?(dir[0]*dx+dir[2]*dz)/len*25:25);
 }
 void World::scheduleGeneration(ChunkCoord c,int priority) {
-    if(find(c)) return;
-    auto r=std::make_shared<ChunkRecord>(c);
-    r->instanceId=nextInstance_++; r->version=1; r->state=ChunkState::Queued;
-    chunks_.emplace(c,r);
-    {std::lock_guard lock(generationMutex_);generationQueue_.push({priority,r});}
+    auto r=find(c);
+    if(r){
+        if(r->data||r->generationState!=GenerationState::Ready)return;
+        ++r->generationRevision;r->generationState=GenerationState::Requested;
+    }else{
+        r=std::make_shared<ChunkRecord>(c);
+        r->instanceId=nextInstance_++;r->version=1;chunks_.emplace(c,r);
+    }
+    r->state=ChunkState::Queued;
+    auto ageKey=std::chrono::duration<double>(Clock::now().time_since_epoch()).count()*100;
+    {std::lock_guard lock(generationMutex_);generationQueue_.push({priority,r,r->instanceId,r->generationRevision,ageKey});}
     generationCv_.notify_one();
 }
 void World::applyJournal(ChunkCoord c,ChunkData& data) {
@@ -46,6 +52,7 @@ std::uint64_t World::invalidateGroup(std::vector<ChunkCoord> coords,bool edit) {
     std::unordered_set<std::uint64_t> oldGroups;
     auto started=Clock::now();
     for(std::size_t i=0;i<coords.size();++i) {
+        if(heightmapEnabled_&&distance(coords[i],playerChunk_)>8)continue;
         auto r=find(coords[i]); if(!r||!r->data||r->cancelRequested||!selected.insert(coords[i]).second)continue;
         if(r->groupId && oldGroups.insert(r->groupId).second) {
             auto it=groups_.find(r->groupId);
@@ -86,18 +93,23 @@ void World::scheduleMeshing(const std::shared_ptr<ChunkRecord>& r,int priority) 
     meshingCv_.notify_one();
 }
 void World::generationLoop() {
+    unsigned fairness=0;
     while(true) {
         GenerateJob j;
         {std::unique_lock lock(generationMutex_);
-         generationCv_.wait(lock,[&]{return stopping_||!generationQueue_.empty();});
+         generationCv_.wait(lock,[&]{return stopping_||!generationQueue_.empty()||(heightmapEnabled_&&far_.hasJobs());});
          if(stopping_)return;
+         if(generationQueue_.empty()||(++fairness%8==0&&heightmapEnabled_&&far_.hasJobs())){lock.unlock();far_.work(generator_);continue;}
          j=generationQueue_.top();generationQueue_.pop();}
-        if(j.record->cancelRequested)continue;
+        if(j.record->cancelRequested){j.record->generationState=GenerationState::Cancelled;continue;}
+        j.record->generationState=GenerationState::Generating;
         std::shared_ptr<ChunkData> data;
-        try {data=generator_.generate(j.record->coord);}
-        catch(...) {std::lock_guard lock(statsMutex_);++stats_.failedJobs;}
-        {std::lock_guard lock(resultMutex_);generationResults_.push_back({j.record,data});}
-        {std::lock_guard lock(statsMutex_);++stats_.generationJobs;}
+        auto start=Clock::now();
+        try {data=generator_.generate(j.record->coord,j.revision,&j.record->cancelRequested);}
+        catch(...) {j.record->generationState=GenerationState::Failed;std::lock_guard lock(statsMutex_);++stats_.failedJobs;}
+        if(j.record->cancelRequested)j.record->generationState=GenerationState::Cancelled;
+        {std::lock_guard lock(resultMutex_);generationResults_.push_back({j.record,data,j.instance,j.revision});}
+        {std::lock_guard lock(statsMutex_);++stats_.generationJobs;stats_.generationCpuMs+=std::chrono::duration<double,std::milli>(Clock::now()-start).count();}
     }
 }
 void World::meshingLoop() {
@@ -110,13 +122,14 @@ void World::meshingLoop() {
         if(j.record->cancelRequested||j.record->version.load()!=j.revision)continue;
         if(meshDelayMs_>0)std::this_thread::sleep_for(std::chrono::milliseconds(meshDelayMs_.load()));
         std::shared_ptr<ChunkMesh> mesh;
+        auto start=Clock::now();
         try {
             if(failMeshes_.exchange(0)>0)throw std::runtime_error("Injected meshing failure");
             mesh=mesher_.build(j.record->coord,j.center,j.neighbors,j.lod);
             mesh->instanceId=j.record->instanceId;mesh->revision=j.revision;mesh->groupId=j.group;
         }catch(...) {std::lock_guard lock(statsMutex_);++stats_.failedJobs;}
         {std::lock_guard lock(resultMutex_);meshingResults_.push_back({j.record,mesh,j.revision});}
-        {std::lock_guard lock(statsMutex_);++stats_.meshingJobs;}
+        {std::lock_guard lock(statsMutex_);++stats_.meshingJobs;stats_.meshingCpuMs+=std::chrono::duration<double,std::milli>(Clock::now()-start).count();}
     }
 }
 void World::pumpResults() {
@@ -124,10 +137,22 @@ void World::pumpResults() {
     {std::lock_guard lock(resultMutex_);generated.swap(generationResults_);meshed.swap(meshingResults_);}
     for(auto& result:generated) {
         auto r=result.record;
-        if(r->cancelRequested||find(r->coord)!=r){++stats_.staleResults;continue;}
-        if(!result.data){r->state=ChunkState::Failed;continue;}
+        if(r->cancelRequested||find(r->coord)!=r||r->instanceId!=result.instance||r->generationRevision!=result.revision){++stats_.staleResults;continue;}
+        if(!result.data){
+            r->generationState=GenerationState::Failed;r->state=ChunkState::Failed;
+            if(++r->retries<=3){
+                ++r->generationRevision;r->generationState=GenerationState::Requested;r->state=ChunkState::Queued;
+                std::lock_guard lock(generationMutex_);
+                generationQueue_.push({priorityFor(r->coord,playerChunk_,viewDirection_),r,r->instanceId,r->generationRevision,
+                    std::chrono::duration<double>(Clock::now().time_since_epoch()).count()*100});generationCv_.notify_one();
+            }
+            continue;
+        }
+        r->retries=0;
+        r->generationState=GenerationState::Ready;
         applyJournal(r->coord,*result.data);
         r->data=std::move(result.data);r->state=ChunkState::Generated;++stats_.generated;
+        ++heightmapBoundaryRevision_;
         // Existing visible neighbors need a fresh border snapshot after arrival.
         std::vector<ChunkCoord> changed;
         for(auto c:adjacent(r->coord)){auto other=find(c);if(other&&other->activeMesh&&distance(c,playerChunk_)<=8)changed.push_back(c);}
@@ -146,13 +171,28 @@ void World::update(const std::array<float,3>& p,const std::array<float,3>& dir) 
 void World::updateAt(const WorldPosition& position,const std::array<float,3>& dir){
     auto checked=position;checked.normalize();
     pumpResults();playerChunk_=checked.chunk;viewDirection_=dir;
+    if(heightmapEnabled_)for(auto it=groups_.begin();it!=groups_.end();){
+        auto& members=it->second.members;
+        members.erase(std::remove_if(members.begin(),members.end(),[&](ChunkCoord c){
+            if(distance(c,playerChunk_)<=8)return false;
+            if(auto r=find(c)){r->groupId=0;r->pendingMesh.reset();r->uploaded=false;r->version.fetch_add(1);}
+            return true;
+        }),members.end());
+        if(members.empty())it=groups_.erase(it);else ++it;
+    }
     for(int z=-10;z<=10;++z)for(int x=-10;x<=10;++x) {
         ChunkCoord c{playerChunk_.x+x,playerChunk_.z+z};
         scheduleGeneration(c,priorityFor(c,playerChunk_,dir));
     }
+    auto publishedFar=heightmapEnabled_?far_.visible(playerChunk_):std::vector<std::shared_ptr<HeightmapStream::Tile>>{};
     for(auto it=chunks_.begin();it!=chunks_.end();) {
         auto r=it->second;
         if(distance(it->first,playerChunk_)>12) {
+            if(heightmapEnabled_&&r->activeMesh&&distance(it->first,playerChunk_)<=24&&
+                std::none_of(publishedFar.begin(),publishedFar.end(),[&](auto&t){return t->input.coord==it->first;})){
+                // Retain only the old display mesh during an unfinished handoff.
+                r->data.reset();++it;continue;
+            }
             r->cancelRequested=true;r->state=ChunkState::Unloading;
             auto g=groups_.find(r->groupId);
             if(g!=groups_.end()){
@@ -171,6 +211,14 @@ void World::updateAt(const WorldPosition& position,const std::array<float,3>& di
     if(!lodChanges.empty())invalidateGroup(lodChanges);
     for(auto& [c,r]:chunks_)
         if(r->data&&(distance(c,playerChunk_)<=8||r->groupId))scheduleMeshing(r,priorityFor(c,playerChunk_,dir));
+    if(heightmapEnabled_){
+        far_.update(playerChunk_,[&](std::int64_t x,std::int64_t z)->std::optional<float>{
+            auto r=find(coordOf(x,z));if(!r||!r->data||distance(r->coord,playerChunk_)>8)return {};
+            for(int y=255;y>=0;--y)if(r->data->get(blockLocal(x),y,blockLocal(z))!=BlockType::Air)return float(y+1);
+            return 0.0f;
+        },dir,[&](ChunkCoord c){auto r=find(c);return r&&bool(r->activeMesh);},heightmapBoundaryRevision_);
+        generationCv_.notify_all();
+    }
     stats_.loaded=chunks_.size();
     {std::lock_guard lock(generationMutex_);stats_.generationQueue=generationQueue_.size();}
     {std::lock_guard lock(meshingMutex_);stats_.meshingQueue=meshingQueue_.size();}
@@ -178,10 +226,12 @@ void World::updateAt(const WorldPosition& position,const std::array<float,3>& di
 std::vector<ChunkUpload> World::takePendingUploads() {
     std::vector<ChunkUpload> out;
     for(auto& [c,r]:chunks_)if(r->pendingMesh&&!r->uploaded&&r->state==ChunkState::Uploading)out.push_back({c,r->pendingMesh});
+    if(heightmapEnabled_)for(auto&t:far_.pending())out.push_back({t->input.coord,t->pending});
     std::sort(out.begin(),out.end(),[&](auto&a,auto&b){return priorityFor(a.coord,playerChunk_,viewDirection_)<priorityFor(b.coord,playerChunk_,viewDirection_);});
     return out;
 }
 bool World::markUploaded(const ChunkUpload& u) {
+    if(u.mesh&&u.mesh->heightmap){for(auto&t:far_.pending())if(t->pending==u.mesh){t->uploaded=true;return true;}return false;}
     auto r=find(u.coord);
     if(!r||!u.mesh||r->pendingMesh!=u.mesh||u.mesh->instanceId!=r->instanceId||u.mesh->revision!=r->version)return false;
     r->uploaded=true;return true;
@@ -197,12 +247,57 @@ std::vector<UploadGroup> World::readyGroups()const {
         }
         if(ready&&!result.members.empty())out.push_back(std::move(result));
     }
+    if(heightmapEnabled_){
+        auto farReady=far_.ready();auto farActive=far_.visible(playerChunk_);
+        auto dependent=[&](const Group& group){
+            for(auto c:group.members)if(distance(c,playerChunk_)>=8||
+                std::any_of(farActive.begin(),farActive.end(),[&](auto&t){return t->input.coord==c;}))return true;
+            return false;
+        };
+        if(!far_.settled()){
+            bool allReady=!farReady.empty();
+            for(auto&[id,group]:groups_)if(dependent(group)&&
+                std::none_of(out.begin(),out.end(),[&](const UploadGroup& g){return g.id==id;}))allReady=false;
+            UploadGroup combined;
+            if(allReady){
+                combined.id=farReady.front()->group|(1ULL<<62);
+                combined.linkedGroups.push_back(farReady.front()->group);
+                for(auto&t:farReady)combined.members.push_back({t->input.coord,t->pending});
+            }
+            for(auto it=out.begin();it!=out.end();)if(dependent(groups_.at(it->id))){
+                if(allReady){combined.linkedGroups.push_back(it->id);combined.members.insert(combined.members.end(),it->members.begin(),it->members.end());}
+                it=out.erase(it);
+            }else ++it;
+            if(allReady)out.push_back(std::move(combined));
+        }
+    }
     return out;
 }
 bool World::commitGroup(const UploadGroup& g) {
+    if(!g.linkedGroups.empty()){
+        // Validate the transaction before changing any CPU publication state.
+        auto candidates=readyGroups();
+        if(std::none_of(candidates.begin(),candidates.end(),[&](const UploadGroup& ready){return ready.id==g.id&&ready.linkedGroups==g.linkedGroups&&ready.members.size()==g.members.size();}))return false;
+        for(auto id:g.linkedGroups){
+            UploadGroup sub;sub.id=id;
+            for(auto&u:g.members)if(u.mesh->groupId==id)sub.members.push_back(u);
+            if(!commitGroup(sub))throw std::logic_error("validated publication transaction changed");
+        }
+        return true;
+    }
+    if(g.id&(1ULL<<63)){auto tiles=far_.ready();if(tiles.size()!=g.members.size())return false;
+        for(auto&u:g.members)if(std::none_of(tiles.begin(),tiles.end(),[&](auto&t){return t->pending==u.mesh;}))return false;
+        if(!far_.commit(tiles))return false;
+        // GPU ownership at this coordinate has changed to the far representation.
+        // Do not later select a cached voxel CPU mesh whose GPU buffers were retired.
+        for(auto&t:tiles)if(auto r=find(t->input.coord)){
+            if(distance(r->coord,playerChunk_)>8){r->activeMesh.reset();if(!r->groupId)r->state=ChunkState::Generated;}
+        }
+        return true;}
     auto it=groups_.find(g.id);if(it==groups_.end()||it->second.members.size()!=g.members.size())return false;
     for(auto& u:g.members){auto r=find(u.coord);if(!r||!r->uploaded||r->groupId!=g.id||r->pendingMesh!=u.mesh||r->version!=u.mesh->revision)return false;}
-    for(auto& u:g.members){auto r=find(u.coord);r->activeMesh=r->pendingMesh;r->pendingMesh.reset();r->groupId=0;r->state=ChunkState::Ready;r->dirty=0;}
+    for(auto& u:g.members){auto r=find(u.coord);r->activeMesh=r->pendingMesh;r->pendingMesh.reset();r->groupId=0;r->state=ChunkState::Ready;r->dirty=0;
+        if(heightmapEnabled_)far_.voxelPublished(u.coord);}
     if(it->second.edit)stats_.lastPublishMs=std::chrono::duration<double,std::milli>(Clock::now()-it->second.started).count();
     ++stats_.swaps;groups_.erase(it);return true;
 }
@@ -211,15 +306,24 @@ std::vector<RenderChunk> World::renderChunks(const std::array<float,3>& p,const 
 }
 std::vector<RenderChunk> World::renderChunksAt(const WorldPosition& p,const std::array<float,3>& dir)const {
     auto checked=p;checked.normalize();std::vector<RenderChunk> out;auto center=checked.chunk;
+    auto farVisible=heightmapEnabled_?far_.visible(center):std::vector<std::shared_ptr<HeightmapStream::Tile>>{};
     for(auto& [c,r]:chunks_) {
-        if(!r->activeMesh||r->cancelRequested||distance(c,center)>8)continue;
+        if(!r->activeMesh||r->cancelRequested)continue;
+        if(distance(c,center)>8){
+            if(!heightmapEnabled_||distance(c,center)>24||
+                std::any_of(farVisible.begin(),farVisible.end(),[&](auto&t){return t->input.coord==c;}))continue;
+        }
         float dx=static_cast<float>(c.x-center.x),dz=static_cast<float>(c.z-center.z),len=std::sqrt(dx*dx+dz*dz);
         if(len>1&&(dir[0]*dx+dir[2]*dz)/len<-0.92f)continue;
         out.push_back({c,r->activeMesh});
     }
+    if(heightmapEnabled_)for(auto&t:farVisible){
+        auto r=find(t->input.coord);if(distance(t->input.coord,center)<=8&&r&&r->activeMesh)continue;
+        out.push_back({t->input.coord,t->active,far_.morph(*t)});
+    }
     stats_.visible=out.size();return out;
 }
-std::vector<ChunkCoord> World::loadedCoords()const {std::vector<ChunkCoord> out;for(auto& [c,r]:chunks_)out.push_back(c);return out;}
+std::vector<ChunkCoord> World::loadedCoords()const {auto out=far_.coords();for(auto& [c,r]:chunks_)out.push_back(c);return out;}
 BlockType World::get(std::int64_t x,int y,std::int64_t z)const {auto r=find(coordOf(x,z));return r&&r->data?r->data->get(blockLocal(x),y,blockLocal(z)):BlockType::Air;}
 bool World::columnLoaded(std::int64_t x,std::int64_t z)const {
     if(x<-WorldLimit||x>=WorldLimit||z<-WorldLimit||z>=WorldLimit)return false;
@@ -233,6 +337,7 @@ bool World::set(std::int64_t x,int y,std::int64_t z,BlockType b) {
     int lx=blockLocal(x),lz=blockLocal(z);
     if(!data->set(lx,y,lz,b))return false;
     r->data=data;r->desiredLod=0;
+    ++heightmapBoundaryRevision_;
     edits_[c][lx|(y<<4)|(lz<<12)]=b;
     std::vector<ChunkCoord> affected{c};
     if(lx==0)affected.push_back({c.x-1,c.z});
@@ -262,5 +367,13 @@ bool World::validateTargetAt(const BlockTarget& old,const WorldPosition& o,const
 RaycastHit World::raycast(const std::array<float,3>& o,const std::array<float,3>& d,float reach)const {
     return traceVoxels(o,d,reach,[&](std::int64_t x,int y,std::int64_t z){return TargetVoxel{get(x,y,z),!columnLoaded(x,z),0,0};});
 }
-WorldStats World::stats()const {std::lock_guard lock(statsMutex_);auto s=stats_;s.ready=0;s.vertices=0;s.indices=0;for(auto&[c,r]:chunks_)if(r->activeMesh){++s.ready;s.vertices+=r->activeMesh->vertices.size();s.indices+=r->activeMesh->indices.size();}return s;}
+WorldStats World::stats()const {
+    std::lock_guard lock(statsMutex_);auto s=stats_;s.heightmapCpuMs=far_.buildMs;s.heightmapJobs=far_.completed;s.heightmapStale=far_.stale;
+    s.farPendingUploads=far_.pending().size();s.farGroupReady=far_.ready().size();s.publicationGroups=groups_.size();
+    s.ready=0;s.vertices=0;s.indices=0;
+    for(auto&[c,r]:chunks_){
+        if(r->pendingMesh&&!r->uploaded)++s.pendingUploads;
+        if(r->activeMesh){++s.ready;s.vertices+=r->activeMesh->vertices.size();s.indices+=r->activeMesh->indices.size();}
+    }return s;
+}
 }

@@ -14,6 +14,8 @@ public:
     Renderer& operator=(const Renderer&)=delete;
     bool initialize(const std::string& vertexShaderPath,const std::string& fragmentShaderPath,const std::string& assetsDirectory);
     bool validateTexturesForTests() const;
+    bool validateHeightmapForTests() const;
+    bool validatePublishedForTests(const std::vector<RenderChunk>&)const;
     double textureLoadMs()const{return textureLoadMs_;}
     double textureUploadMs()const{return textureUploadMs_;}
     bool upload(const ChunkUpload& upload);
@@ -23,6 +25,7 @@ public:
     void render(const Camera& camera,const std::vector<RenderChunk>& chunks,int width,int height);
     void renderTarget(const Camera& camera,const BlockTarget& target,int width,int height,bool crosshair=true);
     std::size_t drawCalls()const{return drawCalls_;}
+    double gpuTerrainMs()const{return gpuTerrainMs_;}
     std::size_t uploadedBytes()const{return uploadedBytes_;}
     std::size_t swaps()const{return swaps_;}
     std::size_t retiredCount()const{return retired_.size();}
@@ -32,6 +35,7 @@ private:
         unsigned int vao=0,vbo=0,ebo=0;
         std::uint32_t indexCount=0;
         std::uint64_t instanceId=0,revision=0;
+        bool heightmap=false;
     };
     struct Retired {GpuMesh mesh;GLsync fence=nullptr;};
     void destroy(GpuMesh& mesh);
@@ -40,6 +44,11 @@ private:
     void assertThread()const;
     unsigned int program_=0,overlayProgram_=0,overlayVao_=0,overlayVbo_=0;
     unsigned int textures_=0;
+    unsigned int heightmapProgram_=0;
+    std::array<GLuint,8> queries_{};
+    std::array<bool,8> queryPending_{};
+    std::size_t queryCursor_=0;
+    double gpuTerrainMs_=0;
     std::uint32_t textureSeed_=125;
     double textureLoadMs_=0,textureUploadMs_=0;
     std::string assetsDirectory_;
