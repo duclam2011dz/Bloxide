@@ -84,6 +84,11 @@ void metadata(){
     std::filesystem::remove_all(dir);
 }
 void stream(){
+#ifdef NDEBUG
+    constexpr int waitSeconds=45;
+#else
+    constexpr int waitSeconds=180;
+#endif
     auto s=WorldSettings::terrainFields("flat");World world(s,true);
     auto p=WorldPosition::fromAbsolute(8,80,8);
     std::unordered_map<ChunkCoord,std::shared_ptr<const ChunkMesh>,ChunkCoordHash> gpu;
@@ -100,7 +105,7 @@ void stream(){
                 ":"+std::to_string(r.mesh->instanceId)+":"+std::to_string(r.mesh->revision)+" gpu="+
                 (it==gpu.end()?"missing":std::to_string(it->second->heightmap)+":"+std::to_string(it->second->instanceId)+":"+std::to_string(it->second->revision)));
     }};
-    auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(45);
+    auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(waitSeconds);
     for(;;){tick();auto rendered=world.renderChunksAt(p,{0,0,0});
         if(rendered.size()==2401)break;
         check(std::chrono::steady_clock::now()<deadline,"LOD cold stream timeout");std::this_thread::sleep_for(std::chrono::milliseconds(2));
@@ -114,7 +119,7 @@ void stream(){
     check(world.stats().generationJobs==before,"edit regenerated terrain");
     for(int x:{16,32,16,0,-16,0}){
         p=WorldPosition::fromAbsolute(x+8,80,8);
-        auto limit=std::chrono::steady_clock::now()+std::chrono::seconds(45);
+        auto limit=std::chrono::steady_clock::now()+std::chrono::seconds(waitSeconds);
         do{
             tick();
             if(world.heightmapSettled()&&world.stats().ready==289&&world.renderChunksAt(p,{0,0,0}).size()==2401)break;

@@ -105,11 +105,74 @@ Palette TextureGenerator::palette(unsigned group){
     case 2:return {{53,33,22,255},{66,42,25,255},{80,50,29,255},{94,61,35,255},{108,73,41,255},{121,84,46,255},{135,98,55,255},{148,111,65,255},{164,128,80,255},{181,148,100,255}};
     case 3:return {{43,48,51,255},{57,63,66,255},{70,76,79,255},{83,89,91,255},{97,103,104,255},{111,117,117,255},{124,130,129,255},{139,145,141,255},{155,161,155,255},{172,177,168,255}};
     case 4:return {{17,20,24,255},{26,30,35,255},{34,39,44,255},{42,48,52,255},{51,56,60,255},{60,66,69,255},{70,76,78,255},{82,87,88,255},{96,100,100,255},{113,117,114,255}};
-    default:throw std::invalid_argument("invalid texture group");
+    default:{
+        if(group>=TextureGroups.size())throw std::invalid_argument("invalid texture group");
+        std::array<int,3> base{112,112,112};
+        if(group==5)base={177,139,106};
+        if(group==6)base={221,177,45};
+        if(group==7)base={61,194,201};
+        if(group==8)base={27,101,167};
+        if(group==9||group==10||group==12)base={127,89,48};
+        if(group==13||group==14)base={194,188,164};
+        if(group==16)base={174,149,103};
+        if(group==17||group==18||group==20)base={92,65,40};
+        if(group==11)base={60,112,39};
+        if(group==15)base={92,136,48};
+        if(group==19)base={42,88,51};
+        if(group==21)base={201,186,131};
+        if(group==22)base={155,199,204};
+        if(group==23)base={149,67,45};
+        if(group==24)base={61,77,90};
+        if(group==25)base={190,47,42};
+        if(group==26)base={223,186,38};
+        Palette colors;
+        for(int i=0;i<10;++i){double shade=0.45+0.09*i;
+            colors.push_back({static_cast<unsigned char>(std::clamp(int(base[0]*shade),0,255)),
+                static_cast<unsigned char>(std::clamp(int(base[1]*shade),0,255)),static_cast<unsigned char>(std::clamp(int(base[2]*shade),0,255)),255});}
+        return colors;
+    }
     }
 }
 TextureImage TextureGenerator::generate(unsigned group,unsigned variant,std::uint32_t seed){
-    if(group>=5||variant>=4)throw std::invalid_argument("invalid texture group/variant");
+    if(group>=TextureGroups.size()||variant>=4)throw std::invalid_argument("invalid texture group/variant");
+    if(group>=5){
+        TextureImage image;auto colors=palette(group);
+        auto stone=generate(3,variant,seed);
+        std::uint32_t shared=seed^((group+1)*0x9e3779b9U),specific=shared^((variant+1)*0x85ebca6bU);
+        constexpr int bayer[4][4]{{0,8,2,10},{12,4,14,6},{3,11,1,9},{15,7,13,5}};
+        for(int y=0;y<32;++y)for(int x=0;x<32;++x){
+            int px=x==31?0:x,py=y==31?0:y;
+            double u=px/31.0,v=py/31.0;
+            int distance=std::min({x,31-x,y,31-y});
+            double blend=smooth(std::clamp((distance-1)/5.0,0.0,1.0));
+            double f=fbm(u,v,shared)*(1-blend)+fbm(u,v,specific)*blend;
+            auto cells=cellular(u+0.06*(f-0.5),v+0.05*(f-0.5),6,shared);
+            double value=0.25+0.65*f;
+            bool bark=group==9||group==13||group==17,top=group==10||group==14||group==18,plank=group==12||group==16||group==20;
+            if(bark){value+=0.16*std::sin(2*3.14159265358979323846*(u*12+0.6*f));if(group==13&&cells.f1<0.17)value-=0.4;}
+            if(top){double radius=std::hypot(px-15.5,py-15.5);value+=0.2*std::sin(radius*2.2+3*f);}
+            if(plank){if(py%8==0)value-=0.35;if(px%16==((py/8)%2)*8&&py%8>0)value-=0.22;}
+            if(group==23){if(py%8==0||(px+(py/8%2)*8)%16==0)value-=0.45;}
+            if(group==24&&py%8==0)value-=0.25;
+            if(group==27){if(cells.f2-cells.f1<0.10)value-=0.4;else if(cells.f2-cells.f1<0.19)value+=0.17;}
+            if(group==8)value+=0.15*std::sin((u+v+0.2*f)*8*3.14159265358979323846);
+            double dither=((bayer[py%4][px%4]+0.5)/16.0-0.5)*0.7;
+            auto pixel=colors[std::clamp(int(std::floor(value*9+0.5+dither)),0,9)];
+            if(group>=5&&group<=7&&!(cells.f1<0.28&&cells.id%3==0)){
+                auto i=(std::size_t(y)*32+x)*4;pixel={stone.rgba[i],stone.rgba[i+1],stone.rgba[i+2],255};
+            }
+            if(group==11||group==15||group==19)pixel[3]=cells.f1<0.64?255:0;
+            if(group==8)pixel[3]=144;
+            if(group==22){pixel={156,203,214,48};if(px<2||py<2)pixel={123,174,182,190};else if(std::abs(px-py)<2)pixel={199,229,231,112};}
+            if(group==25||group==26){
+                int cx=16,cy=10;double radius=std::hypot(x-cx,y-cy);
+                bool petal=y<18&&radius<7+((x+y)%3),stem=x>=15&&x<=16&&y>=15;
+                if(stem)pixel={42,113,35,255};
+                if(!petal&&!stem)pixel[3]=0;
+            }
+            put(image,x,y,pixel);
+        }return image;
+    }
     TextureImage image;auto colors=palette(group);
     constexpr int bayer[4][4]{{0,8,2,10},{12,4,14,6},{3,11,1,9},{15,7,13,5}};
     std::uint32_t shared=seed^((group+1)*0x9e3779b9U),specific=shared^((variant+1)*0x85ebca6bU);
@@ -151,22 +214,22 @@ void TextureGenerator::exportAssets(const std::filesystem::path& dir,std::uint32
     std::filesystem::create_directories(dir);
     std::ofstream manifest(dir/"manifest.txt");
     if(!manifest)throw std::runtime_error("cannot create texture manifest");
-    manifest<<"BLOXIDE_TEXTURES 1 32 32 20 "<<seed<<" 1.2.5\n";
-    std::array<TextureImage,20> images;
-    for(unsigned layer=0;layer<20;++layer){
+    manifest<<"BLOXIDE_TEXTURES 2 32 32 "<<TextureLayers<<' '<<seed<<" 1.4.0\n";
+    std::array<TextureImage,TextureLayers> images;
+    for(unsigned layer=0;layer<TextureLayers;++layer){
         unsigned group=layer/4,variant=layer%4;
         std::string filename=std::string(TextureGroups[group])+"_"+std::to_string(variant)+".png";
         images[layer]=generate(group,variant,seed);writePng(dir/filename,images[layer]);
-        manifest<<layer<<' '<<TextureGroups[group]<<' '<<variant<<' '<<filename<<'\n';
+        manifest<<layer<<' '<<TextureGroups[group]<<' '<<variant<<' '<<filename<<' '<<unsigned(textureRenderClass(group))<<'\n';
     }
-    TextureImage sheet;sheet.width=4*132+4;sheet.height=5*132+4;sheet.rgba.assign(sheet.width*sheet.height*4,255);
+    TextureImage sheet;sheet.width=4*132+4;sheet.height=unsigned(TextureGroups.size())*132+4;sheet.rgba.assign(sheet.width*sheet.height*4,255);
     for(std::size_t i=0;i<sheet.rgba.size();i+=4){sheet.rgba[i]=25;sheet.rgba[i+1]=29;sheet.rgba[i+2]=34;}
-    for(unsigned layer=0;layer<20;++layer)blit(sheet,images[layer],4+(layer%4)*132,4+(layer/4)*132,4);
+    for(unsigned layer=0;layer<TextureLayers;++layer)blit(sheet,images[layer],4+(layer%4)*132,4+(layer/4)*132,4);
     writePng(dir/"contact_sheet.png",sheet);
-    TextureImage tiled;tiled.width=5*292+4;tiled.height=292;tiled.rgba.assign(tiled.width*tiled.height*4,255);
+    TextureImage tiled;tiled.width=4*292+4;tiled.height=((unsigned(TextureGroups.size())+3)/4)*292;tiled.rgba.assign(tiled.width*tiled.height*4,255);
     for(std::size_t i=0;i<tiled.rgba.size();i+=4){tiled.rgba[i]=25;tiled.rgba[i+1]=29;tiled.rgba[i+2]=34;}
-    for(unsigned group=0;group<5;++group)for(int y=0;y<3;++y)for(int x=0;x<3;++x)
-        blit(tiled,images[group*4+(x+2*y)%4],4+group*292+x*96,2+y*96,3);
+    for(unsigned group=0;group<TextureGroups.size();++group)for(int y=0;y<3;++y)for(int x=0;x<3;++x)
+        blit(tiled,images[group*4+(x+2*y)%4],4+(group%4)*292+x*96,2+(group/4)*292+y*96,3);
     writePng(dir/"tiled_preview.png",tiled);
 }
 }

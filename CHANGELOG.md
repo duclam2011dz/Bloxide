@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.4.0] - 2026-10-14
+
+- Added density-world-1/schema-3 configuration, strong 3D overhang/cave terrain, climate fields and slope/depth-aware materials; preserved legacy world output/metadata.
+- Added seeded iron/gold/diamond veins, water/aquifers, three tree species, flowers and deterministic bounded villages with houses, roads, foundations and simple interiors.
+- Added uint16 BlockState, 112-layer material catalog, creative hotbar/picker, cutout mip coverage, translucent sorting, flowing/falling water at 10 Hz and swimming.
+- Added dry, clear-AABB spawn search and frontier wakeup at unloaded water borders; long frames retain fluid tick debt.
+- Replaced production heightmap far terrain with adaptive 3D indexed surfaces, constrained QEM, continuous morph safety/fine fallback, real XYZ morphing and GPU compaction.
+- Fixed orphaned Meshing/Uploading states when an update group leaves the near region, allowing correct voxel re-entry after far ownership transfer.
+- Added scalar/batch/SSE2/AVX2 noise paths, cached fractal kernels, reusable scratch, proven uniform-section skips, ore candidate batching and bit-exact backend qualification tools.
+- Recorded benchmark build type/optimization accurately; only non-quick, five-repeat Release O2/O3 runs can qualify SIMD.
+- Added shared queue credits/upload leases, worker batching, CPU/GPU payload budgets, job reservations and adaptive effective-distance recovery.
+- Reserved headroom for the next far ring before distance recovery, preventing repeated admission/cancellation of an unaffordable band.
+- Added pinned Dear ImGui DevTools, Windows capability-based telemetry, asynchronous per-pass GPU frame timings, inspection/lookup/teleport controls and bounded captures.
+- Added unified profiler suites, recorded configurations, CSV/JSON/Chrome traces/screenshots, density reproducibility and resource/fluid/material/morph regressions.
+- Kept metadata-only disk persistence; edits/fluid changes are RAM-only. Auto noise remains scalar pending deployment-specific SIMD qualification.
+
 ## [1.3.5] - 2026-10-12
 
 - Added terrain-fields-1 with continental spline, roughness, mountain masks, ridges, valleys, plateau blending and flat/rolling-hills/mountainous presets.

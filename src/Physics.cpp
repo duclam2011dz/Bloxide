@@ -92,24 +92,47 @@ void PlayerPhysics::moveAxis(int axis,double delta,const SolidQuery& solid){
     feet[axis]+=allowed;
     if(allowed!=delta){velocity[axis]=0;if(axis==1&&delta<0)grounded=true;}
 }
-void PlayerPhysics::step(float dt,float moveX,float moveZ,bool jump,const SolidQuery& solid,const MaterialQuery& material){
+double PlayerPhysics::submergedFraction(const FluidQuery& query)const{
+    if(!query)return 0;
+    auto a=box(feet);double volume=0;
+    voxels(a,[&](int x,int y,int z){
+        auto state=query(origin.x*16+x,y,origin.z*16+z);if(state!=BlockType::Water)return;
+        double height=query(origin.x*16+x,y+1,origin.z*16+z)==BlockType::Water?1:state.waterHeight();
+        double dx=std::max(0.0,std::min(a.hi[0],x+1.0)-std::max(a.lo[0],double(x)));
+        double dy=std::max(0.0,std::min(a.hi[1],y+height)-std::max(a.lo[1],double(y)));
+        double dz=std::max(0.0,std::min(a.hi[2],z+1.0)-std::max(a.lo[2],double(z)));volume+=dx*dy*dz;
+    });return std::clamp(volume/(4*double(Radius)*Radius*Height),0.0,1.0);
+}
+void PlayerPhysics::step(float dt,float moveX,float moveZ,bool jump,const SolidQuery& solid,const MaterialQuery& material,const FluidQuery& fluid,bool swimDown){
     if(dt<=0||!std::isfinite(dt))return;
     rebase();if(!recoverOverlap(solid))return;
     if(!std::isfinite(moveX)||!std::isfinite(moveZ)){moveX=moveZ=0;}
     double len=std::hypot(moveX,moveZ),wishX=moveX/std::max(1.0,len)*settings.walkSpeed,wishZ=moveZ/std::max(1.0,len)*settings.walkSpeed;
-    if(jump&&grounded){velocity[1]=settings.jumpSpeed;grounded=false;}
+    submerged=submergedFraction(fluid);
+    if(jump&&grounded&&submerged<0.1){velocity[1]=settings.jumpSpeed;grounded=false;}
     int count=std::max(1,int(std::ceil(dt/settings.maxSubstep)));double h=double(dt)/count;
     for(int i=0;i<count;++i){
-        if(!grounded){double drag=std::exp(-settings.airDrag*h);velocity[0]*=drag;velocity[2]*=drag;}
+        submerged=submergedFraction(fluid);bool swimming=submerged>0.05;
+        double speed=swimming?settings.swimSpeed:settings.walkSpeed;
+        wishX=moveX/std::max(1.0,len)*speed;wishZ=moveZ/std::max(1.0,len)*speed;
+        if(swimming){wishX=moveX/std::max(1.0,len)*settings.swimSpeed;wishZ=moveZ/std::max(1.0,len)*settings.swimSpeed;
+            double drag=std::exp(-settings.waterDrag*h);for(auto&v:velocity)v*=drag;}
+        if(!grounded&&!swimming){double drag=std::exp(-settings.airDrag*h);velocity[0]*=drag;velocity[2]*=drag;}
         if(len>0){
             double dx=wishX-velocity[0],dz=wishZ-velocity[2],error=std::hypot(dx,dz);
-            double factor=error>0?std::min(1.0,(grounded?settings.groundAcceleration:settings.airAcceleration)*h/error):0;
+            double acceleration=swimming?settings.swimAcceleration:grounded?settings.groundAcceleration:settings.airAcceleration;
+            double factor=error>0?std::min(1.0,acceleration*h/error):0;
             velocity[0]+=dx*factor;velocity[2]+=dz*factor;
         }else if(grounded){
             double drag=std::exp(-supportFriction(solid,material)*h);velocity[0]*=drag;velocity[2]*=drag;
             if(std::hypot(velocity[0],velocity[2])<settings.stopSpeed)velocity[0]=velocity[2]=0;
         }
-        velocity[1]=std::max(-double(settings.terminalSpeed),velocity[1]-settings.gravity*h);
+        if(swimming){
+            velocity[1]+=h*(6*submerged-4*(1-submerged));
+            if(jump||swimDown){double desired=jump?settings.swimVerticalSpeed:-settings.swimVerticalSpeed;
+                velocity[1]+=std::clamp(desired-velocity[1],-12*h,12*h);}
+            velocity[1]=std::max(-double(settings.waterTerminalSpeed),velocity[1]);
+        }else velocity[1]=std::max(-double(settings.terminalSpeed),velocity[1]-settings.gravity*h);
         grounded=false;
         moveAxis(0,velocity[0]*h,solid);moveAxis(2,velocity[2]*h,solid);moveAxis(1,velocity[1]*h,solid);
     }

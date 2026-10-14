@@ -4,6 +4,7 @@ void (*glUniform1f)(GLint,GLfloat)=NULL;
 void (*glGenQueries)(GLsizei,GLuint*)=NULL;
 void (*glDeleteQueries)(GLsizei,const GLuint*)=NULL;
 void (*glBeginQuery)(GLenum,GLuint)=NULL;
+void (*glQueryCounter)(GLuint,GLenum)=NULL;
 void (*glEndQuery)(GLenum)=NULL;
 void (*glGetQueryObjectiv)(GLuint,GLenum,GLint*)=NULL;
 void (*glGetQueryObjectui64v)(GLuint,GLenum,GLuint64*)=NULL;
@@ -47,7 +48,7 @@ void (*glEnableVertexAttribArray)(GLuint) = NULL;
 int gladLoadGLLoader(GLADloadproc load) {
     if (!load) return 0;
     LOAD(glUniform1f);LOAD(glGenQueries);LOAD(glDeleteQueries);LOAD(glBeginQuery);LOAD(glEndQuery);
-    LOAD(glGetQueryObjectiv);LOAD(glGetQueryObjectui64v);
+    LOAD(glGetQueryObjectiv);LOAD(glGetQueryObjectui64v);LOAD(glQueryCounter);
     LOAD(glTexImage3D); LOAD(glTexSubImage3D); LOAD(glGenerateMipmap);
     LOAD(glActiveTexture); LOAD(glUniform1i); LOAD(glUniform1ui);
     LOAD(glUniform2ui);

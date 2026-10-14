@@ -1,17 +1,20 @@
 #include <bloxide/ChunkGenerator.hpp>
 #include <bloxide/Coordinates.hpp>
+#include <bloxide/DensityWorld.hpp>
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
 namespace bloxide {
-ChunkGenerator::ChunkGenerator(const WorldSettings& s):settings_(s),
+ChunkGenerator::ChunkGenerator(const WorldSettings& s,NoiseBackend backend):settings_(s),
     continental_(SeedDerivation::derive(s.seed,SeedDomain::Continental)),ridges_(SeedDerivation::derive(s.seed,SeedDomain::Ridges)),
     hills_(SeedDerivation::derive(s.seed,SeedDomain::Hills)),turbulence_(SeedDerivation::derive(s.seed,SeedDomain::Turbulence)),
     warpX_(SeedDerivation::derive(s.seed,SeedDomain::WarpX)),warpZ_(SeedDerivation::derive(s.seed,SeedDomain::WarpZ)),
     roughness_(SeedDerivation::derive(s.seed,SeedDomain::Roughness)),mountainMask_(SeedDerivation::derive(s.seed,SeedDomain::MountainMask)),
     valley_(SeedDerivation::derive(s.seed,SeedDomain::Valley)),plateau_(SeedDerivation::derive(s.seed,SeedDomain::Plateau)),
     caves_(SeedDerivation::derive(s.seed,SeedDomain::Caves)),caveWarpX_(SeedDerivation::derive(s.seed,SeedDomain::CaveWarpX)),
-    caveWarpY_(SeedDerivation::derive(s.seed,SeedDomain::CaveWarpY)),caveWarpZ_(SeedDerivation::derive(s.seed,SeedDomain::CaveWarpZ)){settings_.validate();}
+    caveWarpY_(SeedDerivation::derive(s.seed,SeedDomain::CaveWarpY)),caveWarpZ_(SeedDerivation::derive(s.seed,SeedDomain::CaveWarpZ)){
+    settings_.validate();if(s.generatorVersion=="density-world-1")density_=std::make_shared<DensityWorld>(s,backend);
+}
 int ChunkGenerator::surfaceHeight(std::int64_t x,std::int64_t z){static const ChunkGenerator generator;return generator.heightAt(x,z);}
 int ChunkGenerator::heightAt(std::int64_t x,std::int64_t z)const {
     return int(std::floor(sampleTerrain(x,z).height));
@@ -63,6 +66,7 @@ std::shared_ptr<ChunkData> ChunkGenerator::generate(ChunkCoord c,std::uint64_t r
     if(c.x<-WorldLimit/16-16||c.x>WorldLimit/16+15||c.z<-WorldLimit/16-16||c.z>WorldLimit/16+15)throw std::out_of_range("chunk generation bounds");
     auto cancelled=[&]{return cancel&&cancel->load(std::memory_order_relaxed);};
     if(cancelled())return {};
+    if(density_)return density_->generate(c,revision,cancel,optimized);
     std::array<int,256> heights{};int highest=0;
     const auto baseX=c.x*16,baseZ=c.z*16;
     auto data=std::make_shared<ChunkData>();

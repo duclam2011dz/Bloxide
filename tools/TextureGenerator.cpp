@@ -19,7 +19,7 @@ int main(int argc,char** argv){
         bloxide::TextureGenerator::exportAssets(output,seed);
         double ms=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count();
         auto assets=bloxide::AssetLoader::load(output);
-        std::cout<<"generated_layers=20 seed="<<seed<<" generation_ms="<<ms
+        std::cout<<"generated_layers="<<assets.layerCount<<" seed="<<seed<<" generation_ms="<<ms
                  <<" load_ms="<<assets.loadMs<<" png_bytes="<<assets.pngBytes<<std::endl;
     }catch(const std::exception&e){std::cerr<<e.what()<<std::endl;return 1;}
 }

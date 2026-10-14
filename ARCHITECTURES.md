@@ -1,4 +1,52 @@
-# Bloxide architecture - v1.3.5
+# Bloxide architecture - v1.4.0
+
+## Current generation and ownership
+
+`WorldSettings` selects immutable `ChunkGenerator` / `DensityWorld` contexts before workers start. Metadata schema 1/simplex-1 and schema 2/terrain-fields-1 remain unchanged; new schema 3/density-world-1 records density, climate, aquifer and feature parameters. Seed domains are appended, never renumbered.
+
+Density combines the shared height envelope with band-limited warped 3D perturbations and independently masked caves. World-aligned four-block node grids interpolate occupancy; protected Y=0..3 and ceiling Y=248 are preserved. Halo occupancy supplies exposed surface/depth/slope rules. Optimized generation caches field/octave parameters, proves uniform Air/Solid sections before skipping interpolation, bounds column fills and stamps precomputed ore candidates. Reference/scalar results must match exactly.
+
+Ore ellipsoids belong to signed world-aligned 16-block cells. Trees use stable cell priorities/exclusion; village region descriptors reserve bounds and reject unsafe support/foundation sites. Each chunk stamps only intersections with deterministically sorted descriptors. Immutable feature IDs and precedence make generation order irrelevant. Features are not simulated entities.
+
+`BlockState` is uint16: stable block ID in the low byte and auxiliary state in the high byte. Water encodes level/falling flags. Summary histograms count full water states and materials; tree/village counts are chunk incidences, not unique-world totals.
+
+### Scheduling and budgets
+
+Main thread owns world maps, journals, tile records and publication transactions. Two generation workers handle near jobs (batches <=2) and far subjobs (<=4); two meshing workers handle greedy meshes/hierarchies. Workers use immutable block/journal snapshots and per-thread scratch, with cancellation between phases. Instance/revision/group tokens reject stale jobs.
+
+Shared credits bound queued generation/meshing at 128/64. Upload staging has 64 leases acquired before meshing and released after accepted GPU upload, stale rejection or cancellation. OpenGL never runs on workers. CPU accounting includes active/pending/previous meshes and completed worker results; fixed near-worker reservations plus per-far-job reservations prevent admission from treating temporary work as free. Authoritative RAM journals are measured separately and never evicted.
+
+Cache/GPU payload defaults are 512/128 MiB. Pressure reduces effective far radius, canceling regenerable low-priority work; recovery requires two seconds below headroom thresholds plus room for the next tile ring and a far-job reservation. Near data remains required even when a user-selected budget is too small. Tracked payload excludes allocator/driver overhead, so process working set/private commit are displayed separately.
+
+### Adaptive surfaces and publication
+
+Production far jobs use near snapshots where available, otherwise temporary generation arrays, apply RAM journals and release arrays after meshing. No persistent full ChunkData is retained for far tiles. Boundary occupancy shells stay full resolution, including vertical detail.
+
+Fine greedy surfaces become indexed 40-byte SurfaceVertices (XYZ target/source, integer material/face/AO/anchor). QEM ranks candidate collapses, but manifold links, material/cell boundaries, winding and intersection tests decide validity. Triangle orientation is checked analytically over the entire linear morph. Non-adjacent swept convex hulls must admit a separating axis; uncertain cases fall back to fine geometry. Material/translucent details are conservatively retained instead of flattened.
+
+XYZ parent mappings interpolate for 250 ms. Interrupted transitions reuse currently displayed positions only when source signatures agree. Fixed shared boundaries, near/far ownership transactions and revision-checked groups retain active meshes until replacements can publish together. CPU meshes retain mapping data; after morph completion GPU buffers compact to the accepted coarse surface. Retired buffers use nonblocking fences.
+
+### Rendering and input
+
+Packed opaque/cutout vertices remain uint32: X 0..4, Y 5..13, Z 14..18, base layer 19..25, face 26..28, AO 29..30. Separate float vertices handle plants/fractional water/adaptive geometry. The Texture Array has 112 RGBA8 layers with immutable first-20 mapping, per-material alpha policies and coverage-preserving cutout mipmaps. World-block UV repetition and int64 high/low hashing survive floating-origin rebasing.
+
+Opaque writes depth; cutout discards alpha below 0.5; globally sorted translucent faces blend without depth writes. Underwater fog and water UV animation are independent of world seed. Flowers use selection boxes/cross planes without collision; water is skipped by DDA.
+
+Solid physics keeps swept AABB/material friction/air control. Swimming queries actual submerged volume and uses separate tuning. FluidEngine ticks at 10 Hz with a bounded active frontier, two-phase sorted updates, down-first flow and source conversion. Unloaded chunks block flow; out-of-radius frontiers freeze. Journals preserve state only until process exit.
+
+### Diagnostics
+
+Dear ImGui v1.92.9b is pinned in third_party/imgui/PINNED.md with MIT license and official SDL2/OpenGL3 backends. F3+Tab transfers input ownership, clears gameplay commands and releases relative mouse mode; Esc restores prior capture. Simulation continues. Heatmap sampling is budgeted; village lookup/capture writing run off the main thread.
+
+DevTools history caps at 4096 frames; trace ring at 65536 events; async writer queue at two snapshots of at most 16 MiB each. Overwritten/dropped events and incomplete captures are explicit. Runtime percentile samples cap at one million; screenshots have a 32 MiB pixel cap and can stall during readback/encoding.
+
+GPU timestamp queries use an eight-slot asynchronous ring with source frame IDs and opaque/cutout/translucent phases. They measure elapsed GPU command intervals, not shader-stage utilization. Windows telemetry samples process/system CPU and RAM at 1 Hz; adapter-verified DXGI/PDH metrics are capability-dependent. Unsupported data is N/A.
+
+Frame duration is the start-to-start interval ending at the current frame start, so it includes prior-frame capture/logging/driver overhead. CPU phase columns describe the current submission frame; GPU columns carry delayed source IDs. The complete GPU-frame command interval can include scheduling/idle gaps and is not equivalent to pure GPU busy time.
+
+## Historical v1.3.5 implementation notes
+
+The following sections describe legacy generator/render formats retained for compatibility and regression fixtures, not the v1.4 production far pipeline.
 
 ## Coordinate and collision contracts
 

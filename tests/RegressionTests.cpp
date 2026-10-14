@@ -35,7 +35,7 @@ void geometry() {
         int u[3]{b[0]-a[0],b[1]-a[1],b[2]-a[2]};
         int v[3]{c[0]-a[0],c[1]-a[1],c[2]-a[2]};
         int n[3]{u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]};
-        const auto face=(mesh->vertices[mesh->indices[i]].packed>>24U)&7U;
+        const auto face=(mesh->vertices[mesh->indices[i]].packed>>26U)&7U;
         check(n[0]*normals[face][0]+n[1]*normals[face][1]+n[2]*normals[face][2]>0,"outward CCW winding");
     }
     WorldSettings settings;settings.caveThreshold=0.99999;

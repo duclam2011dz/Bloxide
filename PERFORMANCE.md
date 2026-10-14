@@ -1,5 +1,102 @@
 # Bloxide performance and validation
 
+## v1.4.0 - 2026-10-14
+
+### Environment, scope and methodology
+
+Final builds use Windows/MSYS2 UCRT64, GCC 16.1.0, strict floating-point operations (no fast-math/FMA contraction), C++17 and OpenGL 3.3. Host: Intel Core i5-6400 @ 2.70 GHz, four cores/threads, 4,251,672,576 bytes physical RAM; NVIDIA GeForce GT 720, OpenGL 3.3.0 / NVIDIA 461.92. These are local observations, not portable FPS guarantees.
+
+Noise comparisons use seed 130, identical signed coordinate grids, five non-quick repeats, and scalar/batch/SSE2/AVX2 sample and generated-block equivalence checks. Qualification requires a Release O2/O3 build, >=10% batch throughput improvement and no >5% generation p95/p99 regression. Debug/quick runs cannot qualify SIMD. Production Auto remains scalar; explicit ISA paths are diagnostics until qualified for a deployment. O2/O3 are separate clean Release builds, not a project-wide native ISA switch. Tool exports record build type and configured optimization (Debug 0, Release 2/3, other configurations unknown -1); custom user compiler flags are outside that label.
+
+Worldgen microbenchmarks compare reference/optimized generation of exactly the same density-world-1 block arrays, then measure meshing and constrained hierarchy construction separately. Runtime benchmarks use a hidden real 1280x720 OpenGL window, VSync off, fixed seed/configuration and spectator camera. Frame times are start-to-start, including driver work and previous-frame instrumentation; phase timings describe the current frame. Delayed GPU results carry their original frame IDs. Screenshots/final export happen after the sample window.
+
+The requested far radius is 24, not a guarantee that every scene fits it. Nominal steps 2/4/8 retain finer geometry when topology/material/morph safety cannot be proved. Effective distance is budget-driven. LOD on/off changes visible extent; it is not an equivalent-work speedup comparison. Forest/village fixtures explicitly use flat, caves-off, water-off metadata to isolate features. Swimming/collision tests exercise physical movement independently of the spectator benchmark.
+
+### Final Release noise measurements
+
+Median values over five repeats, seed 130, identical batch grids:
+
+| Build/backend | 2D ns/sample | 3D ns/sample | generation p95 / p99 ms | qualification |
+|---|---:|---:|---:|---|
+| O3 scalar | 41.1812 | 65.9022 | 5.1034 / 5.3180 | baseline |
+| O3 SSE2 | 30.3543 | 92.0849 | 6.0635 / 6.2510 | rejected |
+| O3 AVX2 | 21.9825 | 53.7967 | 4.3553 / 4.5588 | both batch gates passed |
+| O2 scalar | 45.7869 | 72.6457 | 5.9972 / 6.1553 | baseline |
+| O2 SSE2 | 46.5319 | 76.2311 | 6.2654 / 6.3589 | rejected |
+| O2 AVX2 | 34.1786 | 57.0727 | 5.2179 / 5.3075 | both batch gates passed |
+
+O3 scalar throughput is approximately 24.28 million 2D / 15.17 million 3D samples/s; AVX2 reaches 45.49 / 18.59 million. SSE2's O3 2D improvement does not offset its 3D/generation regression, so it remains unqualified. All measured backends produced exact scalar samples and block hashes. The tool records per-repeat samples/s and latency in CSV rather than averaging unlike workloads. Clean O2 also passed all 11 enabled headless CTest tests in 23.22 s; OpenGL regressions were run on O3 and Debug.
+
+Artifacts: build/benchmark/v140-release-final-O3 and v140-release-final-O2. These numbers describe this machine/toolchain and the tested workload; Auto is not globally changed based on one machine.
+
+### Correctness and release regression evidence
+
+Clean Release O3 passed 16/16 CTest tests in 134.30 s; clean Debug passed 16/16 in 260.09 s. Driver-backed tests include Texture Array/mips, six-face UV/material/AO sampling, cutout/translucent depth behavior, XYZ morph/depth fixtures, input capture/resize, outline occlusion, injected upload failure, delayed remesh, retirement, six near/far moves/reversals and floating origin near both signs of the world limit.
+
+The Release density LOD fixture requests radius 24 and finished in 97.93 s (1,232 far tiles at the final adaptive radius 19). Debug requests radius 12 and finished in 106.46 s. Headless LOD integration still covers all bands/full radius 24. Neither smoke test is an FPS benchmark: readbacks, artificial 80 ms mesh delay and failure injection are intentionally expensive.
+
+Release delayed-remesh LOD evidence: the old chunk stayed visible for 17 frames; break/place publication took 219.774/118.778 ms; 35 stale results were discarded, with six completed reversals. The cold/traversal diagnostic maximum frame was 819.898 ms, not a steady-state percentile or a hidden success threshold. First texture load in a cold process was 177.285 ms; a warm LOD process loaded in 23.990 ms and submitted upload in 1.031 ms. Upload submission is CPU duration, not GPU completion time.
+
+Legacy seed-130 chunk goldens remain 2061680697937486093 (simplex-1) and 15604160045169882075 (terrain-fields-1). Reproducibility tests cover seeds 0/130/uint64-max across separate processes, reverse orders and threaded probes. Final direct probes additionally matched Debug/O2/O3 exactly for all three generator versions and all three seeds. Metadata tests preserve legacy files, reject conflicts and round-trip schema 3. Core regressions cover density normals and filtered scalar/batch grids, optimized/reference sections, ore/tree/village stamping, fluid flow/source conversion/drainage/resume, FPS-independent ticks, swimming, queue caps, retry/cancel/re-entry and budget recovery.
+
+### Worldgen, fluid and actual runtime measurements
+
+Five worldgen repeats / 160 chunks, seed 130, scalar O3; reference and optimized arrays matched exactly:
+
+| CPU phase | p50 ms | p95 ms | p99 ms |
+|---|---:|---:|---:|
+| Reference generation | 7.3835 | 7.9283 | 9.7106 |
+| Optimized generation | 4.2787 | 4.5833 | 4.7281 |
+| Greedy meshing | 7.1555 | 7.4856 | 7.5966 |
+| Constrained simplification/mapping | 2.1282 | 25.9988 | 44.6181 |
+
+The optimized median is about 42% lower in this same-input test. Hierarchy tail latency remains significant on intricate topology: safety checks preserve geometry rather than forcing an unsafe coarse result. Maximum standalone hierarchy payload was 337,176 bytes; neighbors/reference generation are not included in the timed meshing phase.
+
+Five fluid runs / 1,500 ticks measured p50/p95/p99 of 0.0001/0.0078/0.0506 ms, 885 updates and maximum frontier 128. This fixture includes many idle ticks after settling, so its median is not the cost of a large active waterfall. The raw CSV allows active-frontier-only analysis; these headless timings are not FPS.
+
+Actual OpenGL steady runs below each have 5 s warmup and 30 s sampling after near/far readiness. Same density-world-1 seed 130 / mountainous, scalar O3, fixed camera:
+
+| Scene | FPS | frame p50 / p95 / p99 ms | effective far radius | GPU mesh bytes |
+|---|---:|---:|---:|---:|
+| LOD on, DevTools off | 51.592 | 18.7976 / 22.0715 / 28.4591 | 19 | 78,512,944 |
+| LOD on, DevTools on | 52.226 | 19.0101 / 20.2914 / 22.3953 | 19 | 78,512,944 |
+| LOD off, DevTools off | 106.673 | 9.4087 / 10.4543 / 11.0624 | 8 | 4,511,520 |
+
+These are one sequential run per scene, not five-run confidence intervals. Small UI on/off differences are run variability, not evidence that the overlay speeds rendering up. The no-LOD case renders a much smaller region. No frame samples were dropped.
+
+At the end of the LOD-on/DevTools-off run, tracked CPU cache was 253,996,756 bytes; working set/private commit 450,220,032/566,259,712 bytes; mapped DXGI local process usage 125,550,592 bytes. Latest available GPU opaque/cutout/translucent timings were 5.660/1.708/2.390 ms (total terrain 9.758 ms); they are individual delayed observations, not average utilization. The overlay-on run had identical payloads and a latest terrain observation of 12.001 ms. The near-only run tracked 64,826,696 CPU bytes. GPU-engine hardware utilization stayed N/A.
+
+Mean CPU phase durations from the sampled CSV tail, milliseconds (elapsed submission may include driver waits):
+
+| Phase | LOD / UI off | LOD / UI on | near only |
+|---|---:|---:|---:|
+| World driver | 0.5770 | 0.4965 | 0.1382 |
+| Upload submission | 0.0078 | 0.0073 | 0.0002 |
+| Rendering submission | 13.2808 | 12.5377 | 4.2252 |
+| Fluid driver | 0.1764 | 0.1611 | 0.1430 |
+| UI | 0.1103 | 1.0018 | 0.0808 |
+| Draw calls/frame | 2,567 | 2,567 | 931 |
+
+Rendering submission/transparent ordering and conservative hierarchy tails remain useful optimization targets. These phases do not add up to the entire frame (culling, queue preparation, swaps, telemetry and CSV overhead remain), and percentages of elapsed phases would not be hardware CPU utilization.
+
+The final unified quick suite completed all 20 real-window cases: cold, steady, traversal, reversal, fluid, edits, budget pressure, forest, village and underwater, each with overlay off/on, plus noise/worldgen/fluid microbenchmarks. All 23 summary JSONs parsed successfully and exported Chrome trace durations were nonnegative. Captures were visually reviewed for terrain/water, village/forest, hotbar and DevTools. Artifact root: build/benchmark/v140-release-suite. Quick runtime windows are 2 s with 0.5 s warmup (cold uses no warmup); they validate tooling/scenarios, not long-run stability or performance confidence.
+
+Artifacts: build/benchmark/v140-release-worldgen, v140-release-fluid, v140-release-lod-plain, v140-release-lod-ui and v140-release-near-plain. Raw frame CSVs include cold load and warmup; the last runtime-summary frame count selects the sampled tail. Capture summaries instead describe their explicitly labeled rolling history and must not be substituted for the fixed-window runtime summary.
+
+### Assets and memory accounting
+
+The catalog has 112 material PNGs: 28 groups x four variants (the estimate of 108 grew by the Cobblestone group). The original 20-layer prefix is unchanged. Material PNGs total 84,982 compressed bytes; base RGBA payload is 458,752 bytes and all six mip levels total 611,520 bytes. Two contact/repeat preview PNGs are development assets, not texture layers.
+
+CPU cache defaults to 512 MiB and GPU mesh payload to 128 MiB. Accounting includes active/pending/previous/completed meshes, borrowed snapshots and worker reservations. These are payload/admission budgets, not process RAM or driver VRAM limits. Authoritative edit/fluid journal cell payload is separate, is never evicted, and excludes map/allocator overhead; warnings start at 128 MiB. Distance recovery reserves room for a new ring plus a far job to avoid repeated admission/cancellation.
+
+### Telemetry and measurement limits
+
+Windows CPU/RAM telemetry is sampled at 1 Hz. Worker elapsed sums are neither utilization percentages nor serial frame time. GPU opaque/cutout/translucent passes use an asynchronous query ring; the total command interval can include CPU/driver scheduling and GPU idle gaps, so it is not a hardware-busy metric. On this host adapter-mapped DXGI memory is available; matched GPU-engine utilization is N/A. Fragment/geometry/texture-sampling hardware utilization is not claimed.
+
+History is bounded at 4,096 DevTools frames, 65,536 trace events and 1,000,000 runtime frame samples. Capture queues have finite depth/byte limits. Exports report overwritten/dropped data and incomplete histories; JSON preserves timestamp precision. A quick suite is smoke coverage, not a five-repeat performance confidence interval. RAM-only edits/fluid changes are lost on exit. No benchmark writes to the user's default world.
+
+Raw CSV/JSON/Chrome traces, machine/world configuration and screenshots are generated under build/benchmark and ignored by Git. Reproduce using the unified commands in README; full runtime defaults are five repeats, 5 s warmup and 30 s sampling per scenario, and can take a long time.
+
 ## v1.3.5 - 2026-10-12
 
 Environment: Windows/MSYS2 UCRT64, GCC 16.1, Intel Core i5-6400 @ 2.70 GHz (4 cores/4 threads), NVIDIA GeForce GT 720, driver 27.21.14.6192. Values below are local observations, not portable FPS guarantees.

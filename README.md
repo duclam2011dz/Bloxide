@@ -1,8 +1,51 @@
 # Bloxide
 
-Bloxide v1.3.5 is a C++17 voxel game prototype using SDL2 and OpenGL 3.3 Core.
+Bloxide v1.4.0 is a C++17 voxel game prototype using SDL2 and OpenGL 3.3 Core.
 
-## v1.3.5 terrain fields and distant LOD
+## v1.4.0 density worlds and DevTools
+
+New worlds use `density-world-1` / metadata schema 3: warped 3D density, overhangs, caves, climate fields (plains/forest/mountains), water/aquifers, iron/gold/diamond veins, Oak/Birch/Pine trees and deterministic villages with 3–6 houses. Existing `simplex-1` and `terrain-fields-1` worlds retain their old generator and metadata; features are not retroactively added.
+
+```powershell
+./build-cmake/Bloxide.exe --world ./worlds/density-demo --seed 130 --preset mountainous
+./build-cmake/Bloxide.exe --world ./worlds/density-demo --no-lod
+```
+
+Voxel render/simulation/generation radii are 8/6/10. Far terrain requests radius 24 with nominal 2/4/8-block bands at 9–12/13–18/19–24. Production far rendering uses adaptive 3D surfaces, including caves, structures and RAM edits/fluid snapshots; temporary generation arrays are released after each job. Material/topology/boundary constraints may retain fine geometry. XYZ morphing takes 250 ms; shared boundary shells stay fixed. Effective distance can shrink under the default 512 MiB CPU cache and 128 MiB GPU mesh budgets. These are tracked payload budgets, not limits on total process RAM or driver VRAM.
+
+Water ticks at 10 Hz inside simulation radius 6, flows down before sideways (levels 1–7), supports infinite-source conversion, freezes outside the simulation region and resumes from the RAM journal. Swim with Space/Ctrl. Spawn prefers a dry clear AABB within 16 blocks; ocean-only sites start swimming at the water surface instead of remaining unspawned. No bucket, drowning, lava or volume conservation. Only seed/configuration metadata persists; **all block edits and water changes are lost on exit**.
+
+Creative hotbar: 1–9 or mouse wheel; use the DevTools picker for other blocks. Water is not directly placeable/targetable. Solid placement displaces water. Flowers are selectable but non-collidable; leaves and glass collide. The catalog contains 112 procedural 32×32 PNGs (28 groups × 4 variants); the original 20-layer prefix is unchanged. Rendering has opaque, alpha-tested cutout and depth-sorted translucent passes.
+
+F3 toggles DevTools; hold F3 and press Tab to interact. Esc exits interactive tools and restores mouse capture. Simulation continues; gameplay commands are blocked while tools own input. Tabs cover frame graphs/percentiles, CPU/GPU, memory, streaming/LOD, noise/climate/density previews, fluids, features, block inspection and bounded CSV/JSON/Chrome-trace captures. Controls include distances/budgets, block picker, asynchronous village lookup and safe teleport. Seed/worldgen configuration is read-only.
+
+Windows CPU/RAM telemetry samples at 1 Hz. GPU timings are asynchronous pass durations with source frame IDs, **not hardware utilization**. Adapter-mapped DXGI/PDH metrics are best effort; unsupported metrics display N/A.
+
+### Unified performance tools
+
+```powershell
+./build-cmake/BloxideProfiler.exe --suite all --quick --lod off --output build/benchmark/quick
+./build-cmake/BloxideProfiler.exe --suite streaming --seed 130 --repeat 5 --warmup 5 --duration 30 --output build/benchmark/streaming
+./build-cmake/BloxideNoiseLab.exe --seed 130 --repeat 5 --output build/benchmark/noise
+./build-cmake/Bloxide.exe --benchmark-run --seed 130 --warmup 5 --duration 30 --scenario steady --benchmark-devtools on --benchmark-output build/benchmark/runtime
+```
+
+Suites: noise, worldgen, streaming, fluid, render, all. Runtime cases include cold load, steady state, traversal/reversal, water/edit/budget pressure, forest/village fixtures and underwater. Outputs include manifest/configuration metadata, CSV, JSON, bounded Chrome traces and screenshots. Runtime uses a hidden real OpenGL window with VSync off; headless generation/fluid timings are not FPS. Feature fixtures use an explicitly recorded flat, caves-off, water-off configuration to isolate trees/houses; do not compare them as equivalent mountainous workloads.
+
+Noise has scalar/batch/SSE2/AVX2 paths, precomputed octave kernels and reusable worker scratch. Auto remains scalar; explicit ISA backends are benchmark-only until qualified for a deployment. Qualification requires a Release O2/O3 build, bit-exact outputs, five non-quick repeats, >=10% batch throughput gain and <=5% worldgen p95/p99 regression. Debug and quick runs cannot qualify SIMD.
+
+```powershell
+cmake -S . -B build/release-O2 -G "MinGW Makefiles" -DCMAKE_PREFIX_PATH=D:/msys64/ucrt64 -DCMAKE_BUILD_TYPE=Release -DBLOXIDE_OPT_LEVEL=2
+cmake -S . -B build/debug -G "MinGW Makefiles" -DCMAKE_PREFIX_PATH=D:/msys64/ucrt64 -DCMAKE_BUILD_TYPE=Debug
+cmake --build build/debug --parallel 4
+ctest --test-dir build/debug --output-on-failure
+```
+
+Release defaults to -O3; set BLOXIDE_OPT_LEVEL=2 for controlled comparisons. No project-wide -march=native or fast-math. Enable BLOXIDE_RENDER_TESTS for driver-backed tests and run GPU tests sequentially. The density traversal fixture requests radius 24 in Release and 12 in Debug to keep the unoptimized driver test bounded; headless LOD tests still cover all bands. See PERFORMANCE.md for measurements and limitations.
+
+Use `--far-radius 8..24` to cap requested far distance and `--noise-backend scalar|sse2|avx2|auto` for explicit diagnostics. Backends unsupported by the current CPU/OS are rejected. The benchmark tool validates its configuration and records incomplete suites instead of silently treating a failed subprocess as a successful run.
+
+## Historical v1.3.5 terrain fields and distant LOD
 
 New worlds use terrain-fields-1: continentalness, roughness, mountain masks, ridges, valleys, plateaus and monotone cubic height blending. Presets are flat (Y=64, caves off by default), rolling-hills and mountainous (default, caves on).
 
@@ -16,7 +59,7 @@ Voxel render/simulation/generation radii remain 8/6/10. Heightmap tiles extend t
 
 New metadata uses schema 2 and stores shaping fields, spline points and cave selection. Existing schema-1/simplex-1 worlds keep their old terrain and metadata untouched. Conflicting CLI seed/preset/caves values are rejected. Preset options are world creation settings, not runtime switches.
 
-## v1.3.0 world seeds and collision
+## Historical v1.3.0 world seeds and collision
 
 Swept AABB collision blocks all six faces without converting downward motion into an upward displacement. Horizontal movement never changes Y; existing overlaps are handled separately by the nearest valid recovery along six directions.
 
@@ -30,7 +73,7 @@ World generation now uses a uint64 seed, independently derived simplex fields, w
 
 A new world without --seed chooses a random seed once. The default world lives under the user directory supplied by SDL_GetPrefPath, outside build output. world.meta stores seed, generator version, preset and complete configuration. Reopening uses this metadata; conflicting CLI options, malformed metadata or unsupported versions are rejected. Only metadata persists: block edits still live in RAM and are lost when the game exits.
 
-## v1.2.5 physics and textures
+## Historical v1.2.5 physics and textures
 
 Movement accelerates toward 5 blocks/s at 45 blocks/s^2 on ground and 12 blocks/s^2 in air. Releasing input applies exponential material friction: Grass 14, Dirt 12, Bedrock 11 and Stone 9 s^-1. Mixed support uses the strongest friction. Air drag is 0.15 s^-1 and jumping preserves horizontal momentum. Collision remains substepped at at most 5 ms.
 
@@ -117,7 +160,7 @@ The benchmark writes build/benchmark/v1.2-streaming.csv, v1.2-summary.json and v
 ./build-cmake/BloxideNoiseBenchmark.exe --probe --seed 130 --reverse --threads
 ```
 
-The v1.3 benchmark writes build/benchmark/v1.3-noise.csv with simplex/fractal throughput, cave generation/meshing, cold/traversal settling, driver spikes and publication latency. GPU regressions also render near positive and negative world limits. No vegetation, structures, water or disk edit saves are implemented yet; their feature seeds are reserved.
+The legacy v1.3 benchmark writes build/benchmark/v1.3-noise.csv with simplex/fractal throughput, cave generation/meshing, cold/traversal settling, driver spikes and publication latency. GPU regressions also render near positive and negative world limits. Its historical generator omits vegetation/structures/water; v1.4 density worlds add them. Disk edit saves remain unimplemented.
 
 ### Terrain/LOD diagnostics
 

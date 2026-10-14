@@ -37,33 +37,68 @@ struct ChunkData {
     static constexpr int Height = 256;
     static constexpr int Depth = 16;
     static constexpr std::size_t Volume = static_cast<std::size_t>(Width) * Height * Depth;
-    std::array<BlockType, Volume> blocks{};
+    std::array<BlockState, Volume> blocks{};
     std::uint64_t version = 0;
     bool edited = false;
     std::array<std::uint16_t,18*18> heightHalo{};
     std::array<std::uint16_t,16> sectionSolid{};
+    std::array<std::uint32_t,static_cast<unsigned>(BlockType::Count)> materialCounts{};
+    std::array<std::uint32_t,16> fluidCounts{};
+    std::uint32_t treeIncidences=0,villageIncidences=0;
+    ChunkData(){materialCounts[0]=Volume;}
     void rebuildSummaries() noexcept;
     [[nodiscard]] bool inBounds(int x, int y, int z) const noexcept;
     [[nodiscard]] BlockType get(int x, int y, int z) const noexcept;
+    [[nodiscard]] BlockState getState(int x,int y,int z)const noexcept;
+    bool setState(int x,int y,int z,BlockState value)noexcept;
     bool set(int x, int y, int z, BlockType value) noexcept;
     [[nodiscard]] std::size_t index(int x, int y, int z) const noexcept;
 };
 
 struct ChunkMeshVertex { std::uint32_t packed = 0; };
 struct HeightVertex { float x=0,y=0,z=0,fromY=0; std::uint32_t layer=0,face=2; };
+struct SurfaceVertex {
+    float x=0,y=0,z=0,fromX=0,fromY=0,fromZ=0;
+    std::uint32_t layer=0,face=2,ao=0;
+    std::uint32_t anchor=0;
+};
+struct SurfaceFace {std::uint32_t first=0,count=6;float x=0,y=0,z=0;};
 
 struct ChunkMesh {
+    std::shared_ptr<void> uploadLease;
     ChunkCoord coord{};
     std::vector<ChunkMeshVertex> vertices;
     std::vector<HeightVertex> heightVertices;
+    std::vector<ChunkMeshVertex> cutoutVertices;
+    std::vector<std::uint32_t> cutoutIndices;
+    std::vector<SurfaceVertex> plantVertices,translucentVertices;
+    std::vector<SurfaceVertex> surfaceVertices;
+    std::vector<std::uint32_t> surfaceIndices,coarseIndices;
+    std::vector<SurfaceVertex> compactVertices;
+    std::vector<std::uint32_t> compactIndices;
+    std::vector<std::uint32_t> plantIndices,translucentIndices;
+    std::vector<SurfaceFace> translucentFaces;
     bool heightmap=false;
+    bool surface3D=false;
+    std::uint32_t collapseAccepted=0,collapseRejected=0,refinedVertices=0;
     std::vector<std::uint32_t> indices;
     std::uint8_t lod = 0;
     std::uint64_t sourceVersion = 0;
     std::uint64_t instanceId = 0;
     std::uint64_t revision = 0;
     std::uint64_t groupId = 0;
-    std::size_t byteSize() const noexcept { return vertices.size() * sizeof(ChunkMeshVertex) + heightVertices.size()*sizeof(HeightVertex) + indices.size() * sizeof(std::uint32_t); }
+    std::size_t byteSize() const noexcept {
+        return (vertices.size()+cutoutVertices.size())*sizeof(ChunkMeshVertex)+heightVertices.size()*sizeof(HeightVertex)
+            +(plantVertices.size()+translucentVertices.size())*sizeof(SurfaceVertex)
+            +surfaceVertices.size()*sizeof(SurfaceVertex)
+            +(indices.size()+cutoutIndices.size()+plantIndices.size()+translucentIndices.size()+surfaceIndices.size()+coarseIndices.size())*sizeof(std::uint32_t);
+    }
+    std::size_t residentByteSize()const noexcept{
+        return sizeof(ChunkMesh)+(vertices.capacity()+cutoutVertices.capacity())*sizeof(ChunkMeshVertex)+heightVertices.capacity()*sizeof(HeightVertex)
+            +(plantVertices.capacity()+translucentVertices.capacity()+surfaceVertices.capacity()+compactVertices.capacity())*sizeof(SurfaceVertex)
+            +(indices.capacity()+cutoutIndices.capacity()+plantIndices.capacity()+translucentIndices.capacity()+surfaceIndices.capacity()+coarseIndices.capacity()+compactIndices.capacity())*sizeof(std::uint32_t)
+            +translucentFaces.capacity()*sizeof(SurfaceFace);
+    }
 };
 
 struct ChunkRecord {

@@ -29,6 +29,11 @@ typedef unsigned long long GLuint64;
 #define GL_COLOR_BUFFER_BIT 0x00004000
 #define GL_DEPTH_BUFFER_BIT 0x00000100
 #define GL_DEPTH_TEST 0x0B71
+#define GL_BLEND 0x0BE2
+#define GL_SRC_ALPHA 0x0302
+#define GL_ONE_MINUS_SRC_ALPHA 0x0303
+#define GL_DYNAMIC_DRAW 0x88E8
+void glBlendFunc(GLenum,GLenum);
 #define GL_CULL_FACE 0x0B44
 #define GL_BACK 0x0405
 #define GL_ARRAY_BUFFER 0x8892
@@ -38,6 +43,14 @@ typedef unsigned long long GLuint64;
 #define GL_UNSIGNED_INT 0x1405
 #define GL_UNSIGNED_BYTE 0x1401
 #define GL_RGB 0x1907
+#define GL_DEPTH_COMPONENT 0x1902
+#define GL_TEXTURE_2D 0x0DE1
+#define GL_VENDOR 0x1F00
+#define GL_RENDERER 0x1F01
+#define GL_VERSION 0x1F02
+const GLubyte* glGetString(GLenum);
+void glTexImage2D(GLenum,GLint,GLint,GLsizei,GLsizei,GLint,GLenum,GLenum,const void*);
+void glTexSubImage2D(GLenum,GLint,GLint,GLint,GLsizei,GLsizei,GLenum,GLenum,const void*);
 #define GL_TRIANGLES 0x0004
 #define GL_VERTEX_SHADER 0x8B31
 #define GL_FRAGMENT_SHADER 0x8B30
@@ -65,6 +78,8 @@ typedef unsigned long long GLuint64;
 #define GL_TEXTURE_HEIGHT 0x1001
 #define GL_TEXTURE_DEPTH 0x8071
 #define GL_TIME_ELAPSED 0x88BF
+#define GL_TIMESTAMP 0x8E28
+extern void (*glQueryCounter)(GLuint,GLenum);
 #define GL_QUERY_RESULT_AVAILABLE 0x8867
 #define GL_QUERY_RESULT 0x8866
 extern void (*glUniform1f)(GLint,GLfloat);

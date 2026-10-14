@@ -1,5 +1,6 @@
 #include <bloxide/Targeting.hpp>
 #include <cmath>
+#include <algorithm>
 #include <limits>
 namespace bloxide {
 BlockTarget traceVoxels(const std::array<float,3>& origin,const std::array<float,3>& direction,
@@ -27,10 +28,26 @@ BlockTarget traceWorldVoxels(const WorldPosition& world,const std::array<float,3
     for(int iterations=0; iterations<4096 && distance<=reach; ++iterations) {
         auto voxel=query(baseX+cell[0],cell[1],baseZ+cell[2]);
         if(voxel.blocked) return {};
-        if(isSolid(voxel.type)) {
+        if(isTargetable(voxel.type)) {
             // Starting inside a solid voxel has no visible entry face.
             if(normal==Int3{}) return {};
-            return {true,{baseX+cell[0],cell[1],baseZ+cell[2]},previous,normal,distance,
+            double hitDistance=distance;Int3 hitNormal=normal;bool intersects=true;
+            if(isFlower(voxel.type)){
+                double enter=0,exit=reach;Int3 face{};
+                const double lower[3]{cell[0]+0.15,double(cell[1]),cell[2]+0.15};
+                const double upper[3]{cell[0]+0.85,cell[1]+0.9,cell[2]+0.85};
+                for(int a=0;a<3;++a){
+                    double d=direction[a]/length;
+                    if(d==0){if(origin[a]<lower[a]||origin[a]>upper[a])intersects=false;continue;}
+                    double t1=(lower[a]-origin[a])/d,t2=(upper[a]-origin[a])/d;int sign=-1;
+                    if(t1>t2){std::swap(t1,t2);sign=1;}
+                    if(t1>enter){enter=t1;face={};if(a==0)face.x=sign;if(a==1)face.y=sign;if(a==2)face.z=sign;}
+                    exit=std::min(exit,t2);
+                }
+                intersects&=enter<=exit&&enter>=distance&&enter<=reach&&!(face==Int3{});
+                hitDistance=enter;hitNormal=face;
+            }
+            if(intersects)return {true,{baseX+cell[0],cell[1],baseZ+cell[2]},previous,hitNormal,hitDistance,
                     voxel.type,voxel.instanceId,voxel.revision};
         }
         int axis=0;

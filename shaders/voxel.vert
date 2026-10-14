@@ -10,9 +10,9 @@ flat out uint vBaseLayer;
 flat out uint vFace;
 void main(){
     vec3 local=vec3(aPacked&31u,(aPacked>>5u)&511u,(aPacked>>14u)&31u);
-    vBaseLayer=(aPacked>>19u)&31u;
-    vFace=(aPacked>>24u)&7u;
-    uint ao=(aPacked>>27u)&3u;
+    vBaseLayer=(aPacked>>19u)&127u;
+    vFace=(aPacked>>26u)&7u;
+    uint ao=(aPacked>>29u)&3u;
     if(vFace==0u)vUv=vec2(local.z,-local.y);
     else if(vFace==1u)vUv=vec2(-local.z,-local.y);
     else if(vFace==2u)vUv=local.xz;

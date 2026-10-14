@@ -1,21 +1,113 @@
-BLOXIDE_TEXTURES 1 32 32 20 125 1.2.5
-0 grass_top 0 grass_top_0.png
-1 grass_top 1 grass_top_1.png
-2 grass_top 2 grass_top_2.png
-3 grass_top 3 grass_top_3.png
-4 grass_side 0 grass_side_0.png
-5 grass_side 1 grass_side_1.png
-6 grass_side 2 grass_side_2.png
-7 grass_side 3 grass_side_3.png
-8 dirt 0 dirt_0.png
-9 dirt 1 dirt_1.png
-10 dirt 2 dirt_2.png
-11 dirt 3 dirt_3.png
-12 stone 0 stone_0.png
-13 stone 1 stone_1.png
-14 stone 2 stone_2.png
-15 stone 3 stone_3.png
-16 bedrock 0 bedrock_0.png
-17 bedrock 1 bedrock_1.png
-18 bedrock 2 bedrock_2.png
-19 bedrock 3 bedrock_3.png
+BLOXIDE_TEXTURES 2 32 32 112 125 1.4.0
+0 grass_top 0 grass_top_0.png 1
+1 grass_top 1 grass_top_1.png 1
+2 grass_top 2 grass_top_2.png 1
+3 grass_top 3 grass_top_3.png 1
+4 grass_side 0 grass_side_0.png 1
+5 grass_side 1 grass_side_1.png 1
+6 grass_side 2 grass_side_2.png 1
+7 grass_side 3 grass_side_3.png 1
+8 dirt 0 dirt_0.png 1
+9 dirt 1 dirt_1.png 1
+10 dirt 2 dirt_2.png 1
+11 dirt 3 dirt_3.png 1
+12 stone 0 stone_0.png 1
+13 stone 1 stone_1.png 1
+14 stone 2 stone_2.png 1
+15 stone 3 stone_3.png 1
+16 bedrock 0 bedrock_0.png 1
+17 bedrock 1 bedrock_1.png 1
+18 bedrock 2 bedrock_2.png 1
+19 bedrock 3 bedrock_3.png 1
+20 iron_ore 0 iron_ore_0.png 1
+21 iron_ore 1 iron_ore_1.png 1
+22 iron_ore 2 iron_ore_2.png 1
+23 iron_ore 3 iron_ore_3.png 1
+24 gold_ore 0 gold_ore_0.png 1
+25 gold_ore 1 gold_ore_1.png 1
+26 gold_ore 2 gold_ore_2.png 1
+27 gold_ore 3 gold_ore_3.png 1
+28 diamond_ore 0 diamond_ore_0.png 1
+29 diamond_ore 1 diamond_ore_1.png 1
+30 diamond_ore 2 diamond_ore_2.png 1
+31 diamond_ore 3 diamond_ore_3.png 1
+32 water 0 water_0.png 3
+33 water 1 water_1.png 3
+34 water 2 water_2.png 3
+35 water 3 water_3.png 3
+36 oak_log_side 0 oak_log_side_0.png 1
+37 oak_log_side 1 oak_log_side_1.png 1
+38 oak_log_side 2 oak_log_side_2.png 1
+39 oak_log_side 3 oak_log_side_3.png 1
+40 oak_log_top 0 oak_log_top_0.png 1
+41 oak_log_top 1 oak_log_top_1.png 1
+42 oak_log_top 2 oak_log_top_2.png 1
+43 oak_log_top 3 oak_log_top_3.png 1
+44 oak_leaves 0 oak_leaves_0.png 2
+45 oak_leaves 1 oak_leaves_1.png 2
+46 oak_leaves 2 oak_leaves_2.png 2
+47 oak_leaves 3 oak_leaves_3.png 2
+48 oak_planks 0 oak_planks_0.png 1
+49 oak_planks 1 oak_planks_1.png 1
+50 oak_planks 2 oak_planks_2.png 1
+51 oak_planks 3 oak_planks_3.png 1
+52 birch_log_side 0 birch_log_side_0.png 1
+53 birch_log_side 1 birch_log_side_1.png 1
+54 birch_log_side 2 birch_log_side_2.png 1
+55 birch_log_side 3 birch_log_side_3.png 1
+56 birch_log_top 0 birch_log_top_0.png 1
+57 birch_log_top 1 birch_log_top_1.png 1
+58 birch_log_top 2 birch_log_top_2.png 1
+59 birch_log_top 3 birch_log_top_3.png 1
+60 birch_leaves 0 birch_leaves_0.png 2
+61 birch_leaves 1 birch_leaves_1.png 2
+62 birch_leaves 2 birch_leaves_2.png 2
+63 birch_leaves 3 birch_leaves_3.png 2
+64 birch_planks 0 birch_planks_0.png 1
+65 birch_planks 1 birch_planks_1.png 1
+66 birch_planks 2 birch_planks_2.png 1
+67 birch_planks 3 birch_planks_3.png 1
+68 pine_log_side 0 pine_log_side_0.png 1
+69 pine_log_side 1 pine_log_side_1.png 1
+70 pine_log_side 2 pine_log_side_2.png 1
+71 pine_log_side 3 pine_log_side_3.png 1
+72 pine_log_top 0 pine_log_top_0.png 1
+73 pine_log_top 1 pine_log_top_1.png 1
+74 pine_log_top 2 pine_log_top_2.png 1
+75 pine_log_top 3 pine_log_top_3.png 1
+76 pine_leaves 0 pine_leaves_0.png 2
+77 pine_leaves 1 pine_leaves_1.png 2
+78 pine_leaves 2 pine_leaves_2.png 2
+79 pine_leaves 3 pine_leaves_3.png 2
+80 pine_planks 0 pine_planks_0.png 1
+81 pine_planks 1 pine_planks_1.png 1
+82 pine_planks 2 pine_planks_2.png 1
+83 pine_planks 3 pine_planks_3.png 1
+84 sand 0 sand_0.png 1
+85 sand 1 sand_1.png 1
+86 sand 2 sand_2.png 1
+87 sand 3 sand_3.png 1
+88 glass 0 glass_0.png 3
+89 glass 1 glass_1.png 3
+90 glass 2 glass_2.png 3
+91 glass 3 glass_3.png 3
+92 bricks 0 bricks_0.png 1
+93 bricks 1 bricks_1.png 1
+94 bricks 2 bricks_2.png 1
+95 bricks 3 bricks_3.png 1
+96 slate_roof 0 slate_roof_0.png 1
+97 slate_roof 1 slate_roof_1.png 1
+98 slate_roof 2 slate_roof_2.png 1
+99 slate_roof 3 slate_roof_3.png 1
+100 red_flower 0 red_flower_0.png 2
+101 red_flower 1 red_flower_1.png 2
+102 red_flower 2 red_flower_2.png 2
+103 red_flower 3 red_flower_3.png 2
+104 yellow_flower 0 yellow_flower_0.png 2
+105 yellow_flower 1 yellow_flower_1.png 2
+106 yellow_flower 2 yellow_flower_2.png 2
+107 yellow_flower 3 yellow_flower_3.png 2
+108 cobblestone 0 cobblestone_0.png 1
+109 cobblestone 1 cobblestone_1.png 1
+110 cobblestone 2 cobblestone_2.png 1
+111 cobblestone 3 cobblestone_3.png 1

@@ -122,7 +122,7 @@ void meshing(){
     auto mesh=ChunkMesher{}.build({},data,{},0);
     bool largeTop=false;
     for(std::size_t i=0;i<mesh->vertices.size();i+=4){
-        unsigned face=(mesh->vertices[i].packed>>24)&7U,base=(mesh->vertices[i].packed>>19)&31U;
+        unsigned face=(mesh->vertices[i].packed>>26)&7U,base=(mesh->vertices[i].packed>>19)&127U;
         require(base==textureBaseLayer(BlockType::Grass,face),"packed layer integer");
         if(face==2){
             int x0=16,z0=16,x1=0,z1=0;
@@ -136,7 +136,7 @@ void meshing(){
     auto mixedMesh=ChunkMesher{}.build({},mixed,{},0);bool mergedBottom=false;
     for(std::size_t i=0;i<mixedMesh->vertices.size();i+=4){
         auto p=mixedMesh->vertices[i].packed;
-        if(((p>>24)&7U)!=3)continue;
+        if(((p>>26)&7U)!=3)continue;
         int low=16,high=0;
         for(int j=0;j<4;++j){int x=mixedMesh->vertices[i+j].packed&31U;low=std::min(low,x);high=std::max(high,x);}
         mergedBottom|=high-low==2;

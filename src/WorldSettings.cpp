@@ -21,6 +21,25 @@ namespace {
 const char* names[]{"continental","ridges","hills","turbulence","warp2D","caveWarp","caveDensity"};
 std::array<FractalSettings*,7> fields(WorldSettings& s){return {&s.continental,&s.ridges,&s.hills,&s.turbulence,&s.warp2D,&s.caveWarp,&s.caveDensity};}
 }
+void DensitySettings::validate()const{
+    terrain.validate();warp.validate();rockMask.validate();climate.validate();aquifer.validate();
+    for(double v:{amplitude,warpStrength,band,baseScale,aquiferThreshold,caveDistributionMinimum,villageProbability})
+        if(!std::isfinite(v))throw std::invalid_argument("nonfinite density config");
+    if(amplitude<0||amplitude>2||warpStrength<0||warpStrength>64||band<8||band>96||baseScale<4||baseScale>64||
+        ceiling<64||ceiling>248||seaLevel<4||seaLevel>192||waterTableBase<4||waterTableBase>192||waterTableAmplitude<0||waterTableAmplitude>48||
+        aquiferThreshold<0||aquiferThreshold>1||caveDistributionMinimum<0||caveDistributionMinimum>1||
+        oreCell!=16||treeCell<4||treeCell>32||villageCell<256||villageCell>4096||villageJitter<0||villageJitter>villageCell/4||
+        villageProbability<0||villageProbability>1||villageMaxSlope<0||villageMaxSlope>12||villageMaxFoundation<1||villageMaxFoundation>24)
+        throw std::invalid_argument("invalid density/feature config");
+    for(auto& o:ore)if(o.minY<4||o.maxY>192||o.minY>o.maxY||!std::isfinite(o.probability)||o.probability<0||o.probability>1||
+        o.minRadius<1||o.maxRadius>4||o.minRadius>o.maxRadius)throw std::invalid_argument("invalid ore config");
+}
+WorldSettings WorldSettings::densityWorld(std::string preset){
+    auto s=terrainFields(std::move(preset));s.generatorVersion="density-world-1";
+    if(s.preset=="rolling-hills")s.density.amplitude=0.35;
+    if(s.preset=="flat")s.density.amplitude=0;
+    s.validate();return s;
+}
 WorldSettings WorldSettings::terrainFields(std::string preset){
     WorldSettings s;s.generatorVersion="terrain-fields-1";s.preset=std::move(preset);
     s.continental={5,1.0/2048,2,0.5};
@@ -29,9 +48,10 @@ WorldSettings WorldSettings::terrainFields(std::string preset){
     s.validate();return s;
 }
 void WorldSettings::validate()const {
-    if(generatorVersion!="simplex-1"&&generatorVersion!="terrain-fields-1")throw std::invalid_argument("unsupported generator version '"+generatorVersion+"'");
+    if(generatorVersion!="simplex-1"&&generatorVersion!="terrain-fields-1"&&generatorVersion!="density-world-1")throw std::invalid_argument("unsupported generator version '"+generatorVersion+"'");
     if((generatorVersion=="simplex-1"&&preset!="mountains-v1")||
-       (generatorVersion=="terrain-fields-1"&&preset!="flat"&&preset!="rolling-hills"&&preset!="mountainous"))throw std::invalid_argument("unsupported terrain preset '"+preset+"'");
+       (generatorVersion!="simplex-1"&&preset!="flat"&&preset!="rolling-hills"&&preset!="mountainous"))throw std::invalid_argument("unsupported terrain preset '"+preset+"'");
+    density.validate();
     continental.validate();ridges.validate();hills.validate();turbulence.validate();warp2D.validate();caveWarp.validate();caveDensity.validate();
     if(!std::isfinite(warpStrength)||warpStrength<0||warpStrength>256||
        !std::isfinite(caveWarpStrength)||caveWarpStrength<0||caveWarpStrength>64||
@@ -58,7 +78,7 @@ void WorldSettings::save(const std::filesystem::path& file)const{
     if(std::filesystem::exists(temporary))throw std::runtime_error("metadata temporary file already exists: "+temporary.string());
     try{
         std::ofstream out(temporary,std::ios::binary);out.imbue(std::locale::classic());out<<std::setprecision(std::numeric_limits<double>::max_digits10);
-        out<<"format_version "<<(generatorVersion=="simplex-1"?1:2)<<"\nseed "<<seed<<"\ngenerator_version "<<generatorVersion<<"\npreset "<<preset<<'\n';
+        out<<"format_version "<<(generatorVersion=="simplex-1"?1:generatorVersion=="terrain-fields-1"?2:3)<<"\nseed "<<seed<<"\ngenerator_version "<<generatorVersion<<"\npreset "<<preset<<'\n';
         WorldSettings copy=*this;auto configs=fields(copy);
         for(int i=0;i<7;++i){
             auto& f=*configs[i];out<<names[i]<<".octaves "<<f.octaves<<'\n'<<names[i]<<".frequency "<<f.frequency<<'\n'
@@ -76,6 +96,22 @@ void WorldSettings::save(const std::filesystem::path& file)const{
             double values[]{maskLow,maskHigh,hillsAmplitude,ridgeAmplitude,valleyAmplitude,plateauBlend,plateauHeight,minHeight,maxHeight};
             for(int i=0;i<9;++i)out<<keys[i]<<' '<<values[i]<<'\n';
         }
+        if(generatorVersion=="density-world-1"){
+            const char* names[]{"terrain","warp","rockMask","climate","aquifer"};
+            const FractalSettings* fs[]{&density.terrain,&density.warp,&density.rockMask,&density.climate,&density.aquifer};
+            for(int i=0;i<5;++i)out<<"density."<<names[i]<<".octaves "<<fs[i]->octaves<<'\n'<<"density."<<names[i]<<".frequency "<<fs[i]->frequency<<'\n'
+                <<"density."<<names[i]<<".lacunarity "<<fs[i]->lacunarity<<'\n'<<"density."<<names[i]<<".gain "<<fs[i]->gain<<'\n';
+            const char* keys[]{"amplitude","warpStrength","band","baseScale","ceiling","seaLevel","waterTableBase","waterTableAmplitude","aquiferThreshold",
+                "caveDistributionMinimum","water","ores","trees","villages","flowers","oreCell","treeCell","villageCell","villageJitter","villageProbability","villageMaxSlope","villageMaxFoundation"};
+            double values[]{density.amplitude,density.warpStrength,density.band,density.baseScale,double(density.ceiling),double(density.seaLevel),
+                double(density.waterTableBase),double(density.waterTableAmplitude),density.aquiferThreshold,density.caveDistributionMinimum,
+                double(density.water),double(density.ores),double(density.trees),double(density.villages),double(density.flowers),
+                double(density.oreCell),double(density.treeCell),double(density.villageCell),double(density.villageJitter),density.villageProbability,
+                double(density.villageMaxSlope),double(density.villageMaxFoundation)};
+            for(int i=0;i<22;++i)out<<"density."<<keys[i]<<' '<<values[i]<<'\n';
+            for(int i=0;i<3;++i)out<<"ore."<<i<<".minY "<<density.ore[i].minY<<'\n'<<"ore."<<i<<".maxY "<<density.ore[i].maxY<<'\n'
+                <<"ore."<<i<<".probability "<<density.ore[i].probability<<'\n'<<"ore."<<i<<".minRadius "<<density.ore[i].minRadius<<'\n'<<"ore."<<i<<".maxRadius "<<density.ore[i].maxRadius<<'\n';
+        }
         out.flush();if(!out)throw std::runtime_error("metadata write failed");out.close();
 #ifdef _WIN32
         if(!MoveFileExW(temporary.c_str(),file.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH))throw std::runtime_error("atomic metadata replacement failed");
@@ -92,7 +128,7 @@ WorldSettings WorldSettings::load(const std::filesystem::path& file){
     auto get=[&](const std::string& name){auto it=data.find(name);if(it==data.end())throw std::runtime_error("metadata key missing: "+name);auto v=it->second;data.erase(it);return v;};
     auto number=[&](const std::string& name){std::istringstream s(get(name));s.imbue(std::locale::classic());double v;char tail;if(!(s>>v)||(s>>tail)||!std::isfinite(v))throw std::runtime_error("metadata number invalid: "+name);return v;};
     WorldSettings settings;
-    auto format=get("format_version");if(format!="1"&&format!="2")throw std::runtime_error("unsupported metadata format");
+    auto format=get("format_version");if(format!="1"&&format!="2"&&format!="3")throw std::runtime_error("unsupported metadata format");
     settings.seed=parseSeed(get("seed"));settings.generatorVersion=get("generator_version");settings.preset=get("preset");
     auto configs=fields(settings);
     for(int i=0;i<7;++i){
@@ -102,8 +138,8 @@ WorldSettings WorldSettings::load(const std::filesystem::path& file){
         configs[i]->lacunarity=number(prefix+".lacunarity");configs[i]->gain=number(prefix+".gain");
     }
     settings.warpStrength=number("warpStrength");settings.caveWarpStrength=number("caveWarpStrength");settings.caveThreshold=number("caveThreshold");
-    if(format=="2"){
-        if(settings.generatorVersion!="terrain-fields-1")throw std::runtime_error("metadata version/generator mismatch");
+    if(format=="2"||format=="3"){
+        if(settings.generatorVersion!=(format=="2"?"terrain-fields-1":"density-world-1"))throw std::runtime_error("metadata version/generator mismatch");
         auto cave=get("caves");if(cave!="0"&&cave!="1")throw std::runtime_error("invalid caves flag");settings.caves=cave=="1";
         const char* extra[]{"roughness","mountainMask","valley","plateau"};
         FractalSettings* fs[]{&settings.roughness,&settings.mountainMask,&settings.valley,&settings.plateau};
@@ -116,6 +152,20 @@ WorldSettings WorldSettings::load(const std::filesystem::path& file){
         settings.ridgeAmplitude=number("ridgeAmplitude");settings.valleyAmplitude=number("valleyAmplitude");settings.plateauBlend=number("plateauBlend");
         settings.plateauHeight=number("plateauHeight");settings.minHeight=number("minHeight");settings.maxHeight=number("maxHeight");
     }else if(settings.generatorVersion!="simplex-1")throw std::runtime_error("metadata version/generator mismatch");
+    if(format=="3"){
+        const char* names[]{"terrain","warp","rockMask","climate","aquifer"};
+        FractalSettings* fs[]{&settings.density.terrain,&settings.density.warp,&settings.density.rockMask,&settings.density.climate,&settings.density.aquifer};
+        auto integer=[&](const std::string& key){double n=number(key);if(n<-4096||n>4096||std::floor(n)!=n)throw std::runtime_error("invalid integer: "+key);return int(n);};
+        for(int i=0;i<5;++i){auto p=std::string("density.")+names[i];*fs[i]={integer(p+".octaves"),number(p+".frequency"),number(p+".lacunarity"),number(p+".gain")};}
+        auto& d=settings.density;d.amplitude=number("density.amplitude");d.warpStrength=number("density.warpStrength");d.band=number("density.band");d.baseScale=number("density.baseScale");
+        d.ceiling=integer("density.ceiling");d.seaLevel=integer("density.seaLevel");d.waterTableBase=integer("density.waterTableBase");d.waterTableAmplitude=integer("density.waterTableAmplitude");
+        d.aquiferThreshold=number("density.aquiferThreshold");d.caveDistributionMinimum=number("density.caveDistributionMinimum");
+        auto flag=[&](const char* key){auto n=integer(std::string("density.")+key);if(n!=0&&n!=1)throw std::runtime_error("invalid feature flag");return n==1;};
+        d.water=flag("water");d.ores=flag("ores");d.trees=flag("trees");d.villages=flag("villages");d.flowers=flag("flowers");
+        d.oreCell=integer("density.oreCell");d.treeCell=integer("density.treeCell");d.villageCell=integer("density.villageCell");d.villageJitter=integer("density.villageJitter");
+        d.villageProbability=number("density.villageProbability");d.villageMaxSlope=integer("density.villageMaxSlope");d.villageMaxFoundation=integer("density.villageMaxFoundation");
+        for(int i=0;i<3;++i){auto p="ore."+std::to_string(i);d.ore[i]={integer(p+".minY"),integer(p+".maxY"),number(p+".probability"),integer(p+".minRadius"),integer(p+".maxRadius")};}
+    }
     if(!data.empty())throw std::runtime_error("unknown metadata key: "+data.begin()->first);
     try{settings.validate();}catch(const std::exception&e){throw std::runtime_error(file.string()+": "+e.what());}
     return settings;
@@ -129,7 +179,7 @@ WorldSettings WorldSettings::open(const std::filesystem::path& dir,std::optional
         if(caves&&*caves!=existing.caves)throw std::runtime_error("CLI caves conflicts with existing world metadata");
         return existing;
     }
-    WorldSettings settings=terrainFields(preset.value_or("mountainous"));
+    WorldSettings settings=densityWorld(preset.value_or("mountainous"));
     if(caves)settings.caves=*caves;
     if(seed)settings.seed=*seed;
     else {std::random_device random;settings.seed=(std::uint64_t(random())<<32)^random();}

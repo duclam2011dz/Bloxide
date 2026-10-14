@@ -8,7 +8,7 @@
 #include <iostream>
 #include <thread>
 using namespace bloxide;
-std::uint64_t chunkHash(const ChunkData& data){std::uint64_t h=1469598103934665603ULL;for(auto b:data.blocks){h^=static_cast<unsigned char>(b);h*=1099511628211ULL;}return h;}
+std::uint64_t chunkHash(const ChunkData& data,bool states=false){std::uint64_t h=1469598103934665603ULL;for(auto b:data.blocks){h^=static_cast<unsigned char>(b);h*=1099511628211ULL;if(states){h^=b.value>>8;h*=1099511628211ULL;}}return h;}
 int main(int argc,char**argv){
     try{
         bool probe=false,reverse=false,threads=false,golden=false,quick=false;WorldSettings settings;
@@ -16,6 +16,7 @@ int main(int argc,char**argv){
             std::string arg=argv[i];
             if(arg=="--probe")probe=true;else if(arg=="--reverse")reverse=true;else if(arg=="--threads")threads=true;else if(arg=="--golden")golden=true;else if(arg=="--quick")quick=true;
             else if(arg=="--fields"){auto seed=settings.seed;settings=WorldSettings::terrainFields();settings.seed=seed;}
+            else if(arg=="--density"){auto seed=settings.seed;settings=WorldSettings::densityWorld();settings.seed=seed;}
             else if(arg=="--seed"&&i+1<argc)settings.seed=WorldSettings::parseSeed(argv[++i]);else throw std::invalid_argument("invalid benchmark argument");
         }
         if(golden){
@@ -30,9 +31,9 @@ int main(int argc,char**argv){
             std::vector<std::pair<ChunkCoord,std::uint64_t>> hashes;
             if(threads){
                 std::vector<std::future<std::uint64_t>> work;
-                for(auto c:coords)work.push_back(std::async(std::launch::async,[&,c]{return chunkHash(*generator.generate(c));}));
+                for(auto c:coords)work.push_back(std::async(std::launch::async,[&,c]{return chunkHash(*generator.generate(c),settings.generatorVersion=="density-world-1");}));
                 for(std::size_t i=0;i<coords.size();++i)hashes.push_back({coords[i],work[i].get()});
-            }else for(auto c:coords)hashes.push_back({c,chunkHash(*generator.generate(c))});
+            }else for(auto c:coords)hashes.push_back({c,chunkHash(*generator.generate(c),settings.generatorVersion=="density-world-1")});
             std::sort(hashes.begin(),hashes.end(),[](auto&a,auto&b){return a.first.x!=b.first.x?a.first.x<b.first.x:a.first.z<b.first.z;});
             for(auto& [c,h]:hashes)std::cout<<c.x<<','<<c.z<<':'<<h<<'\n';return 0;
         }

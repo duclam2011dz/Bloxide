@@ -8,6 +8,11 @@ uniform sampler2DArray uBlockTextures;
 uniform uint uTextureSeed;
 uniform uvec2 uChunkBlockX;
 uniform uvec2 uChunkBlockZ;
+uniform int uAlphaMode;
+uniform float uTime;
+uniform bool uUnderwater;
+uniform vec3 uEyePosition;
+uniform vec3 uChunkOrigin;
 out vec4 FragColor;
 uvec2 add64(uvec2 base,int delta){
     uint lo=base.x+uint(delta);
@@ -25,6 +30,10 @@ void main(){
     ivec3 owner=ivec3(floor(vLocalPosition-normals[vFace]*0.001));
     uint layer=vBaseLayer+variant(owner);
     // Unwrapped block-space UV derivatives preserve mip selection across repeats.
-    vec4 texel=textureGrad(uBlockTextures,vec3(vUv,float(layer)),dFdx(vUv),dFdy(vUv));
-    FragColor=vec4(texel.rgb*vAo,1);
+    vec2 uv=vUv;if(vBaseLayer==32u)uv+=vec2(uTime*0.035,uTime*0.017);
+    vec4 texel=textureGrad(uBlockTextures,vec3(uv,float(layer)),dFdx(vUv),dFdy(vUv));
+    if(uAlphaMode==1&&texel.a<0.5)discard;
+    vec3 color=texel.rgb*vAo;
+    if(uUnderwater){float d=length(vLocalPosition+uChunkOrigin-uEyePosition);color=mix(color,vec3(0.04,0.23,0.36),1.0-exp(-d*0.055));}
+    FragColor=vec4(color,uAlphaMode==2?texel.a:1.0);
 }
