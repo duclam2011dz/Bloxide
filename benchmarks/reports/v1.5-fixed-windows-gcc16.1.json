@@ -1,0 +1,242 @@
+{
+  "date": "2026-10-16",
+  "build": {
+    "version": "1.5.0",
+    "commit": "8a409d8af4409e5bd39c05116461cedef055c1fa",
+    "dirty": false,
+    "configuration": "Release",
+    "compiler": "GNU 16.1.0",
+    "platform": "Windows-AMD64",
+    "optimization": "-O3",
+    "sanitizer": "none",
+    "sse2_compiled": true,
+    "avx2_compiled": true,
+    "dependency_provider": "vcpkg-manifest",
+    "dependency_baseline": "a077941aaf7e15e2ac228f5052a1d9a65179ff63",
+    "determinism_profile": "Windows-AMD64/GNU 16.1.0/strict"
+  },
+  "cpu": "Intel(R) Core(TM) i5-6400 CPU @ 2.70GHz",
+  "physical_ram_bytes": 4251672576,
+  "gl_renderer": "GeForce GT 720/PCIe/SSE2",
+  "gl_version": "3.3.0 NVIDIA 461.92",
+  "baseline_id": "bloxide-v1.5-fixed-130",
+  "worldgen_config_fingerprint": "31358b68611bb560",
+  "warmup_seconds": 5,
+  "sample_seconds": 30,
+  "repeats": 5,
+  "resolution": [
+    1280,
+    720
+  ],
+  "camera_world": [
+    8.5,
+    160,
+    72.5
+  ],
+  "camera_yaw_pitch": [
+    -90,
+    -25
+  ],
+  "runs": [
+    {
+      "name": "steady-0-plain-lod",
+      "fps": 55.49789866500763,
+      "p50_ms": 17.8061,
+      "p95_ms": 19.145,
+      "p99_ms": 20.8383,
+      "effective_far_radius": 19,
+      "cpu_payload_bytes": 253996756,
+      "gpu_mesh_bytes": 78512944
+    },
+    {
+      "name": "steady-0-plain-near",
+      "fps": 107.01922647049533,
+      "p50_ms": 9.4013,
+      "p95_ms": 10.4336,
+      "p99_ms": 11.2044,
+      "effective_far_radius": 8,
+      "cpu_payload_bytes": 64826696,
+      "gpu_mesh_bytes": 4511520
+    },
+    {
+      "name": "steady-0-ui-lod",
+      "fps": 52.33662714828499,
+      "p50_ms": 18.8037,
+      "p95_ms": 20.957,
+      "p99_ms": 23.2331,
+      "effective_far_radius": 19,
+      "cpu_payload_bytes": 253996756,
+      "gpu_mesh_bytes": 78512944
+    },
+    {
+      "name": "steady-0-ui-near",
+      "fps": 94.38263224172813,
+      "p50_ms": 10.1468,
+      "p95_ms": 12.9292,
+      "p99_ms": 20.7302,
+      "effective_far_radius": 8,
+      "cpu_payload_bytes": 64826696,
+      "gpu_mesh_bytes": 4511520
+    },
+    {
+      "name": "steady-1-plain-lod",
+      "fps": 55.424884432787415,
+      "p50_ms": 17.8159,
+      "p95_ms": 19.4475,
+      "p99_ms": 21.3035,
+      "effective_far_radius": 19,
+      "cpu_payload_bytes": 253996756,
+      "gpu_mesh_bytes": 78512944
+    },
+    {
+      "name": "steady-1-plain-near",
+      "fps": 108.17323192509829,
+      "p50_ms": 9.2934,
+      "p95_ms": 10.2205,
+      "p99_ms": 10.7401,
+      "effective_far_radius": 8,
+      "cpu_payload_bytes": 64826696,
+      "gpu_mesh_bytes": 4511520
+    },
+    {
+      "name": "steady-1-ui-lod",
+      "fps": 53.45760402159448,
+      "p50_ms": 18.6885,
+      "p95_ms": 19.482,
+      "p99_ms": 20.0969,
+      "effective_far_radius": 19,
+      "cpu_payload_bytes": 253996756,
+      "gpu_mesh_bytes": 78512944
+    },
+    {
+      "name": "steady-1-ui-near",
+      "fps": 101.32478237912402,
+      "p50_ms": 9.7887,
+      "p95_ms": 11.0703,
+      "p99_ms": 11.7067,
+      "effective_far_radius": 8,
+      "cpu_payload_bytes": 64826696,
+      "gpu_mesh_bytes": 4511520
+    },
+    {
+      "name": "steady-2-plain-lod",
+      "fps": 55.575404865825405,
+      "p50_ms": 17.788,
+      "p95_ms": 19.2066,
+      "p99_ms": 21.3753,
+      "effective_far_radius": 19,
+      "cpu_payload_bytes": 253996756,
+      "gpu_mesh_bytes": 78512944
+    },
+    {
+      "name": "steady-2-plain-near",
+      "fps": 107.73102744727004,
+      "p50_ms": 9.3621,
+      "p95_ms": 10.2374,
+      "p99_ms": 10.9194,
+      "effective_far_radius": 8,
+      "cpu_payload_bytes": 64826696,
+      "gpu_mesh_bytes": 4511520
+    },
+    {
+      "name": "steady-2-ui-lod",
+      "fps": 53.07318761273935,
+      "p50_ms": 18.7743,
+      "p95_ms": 19.8446,
+      "p99_ms": 21.0453,
+      "effective_far_radius": 19,
+      "cpu_payload_bytes": 253996756,
+      "gpu_mesh_bytes": 78512944
+    },
+    {
+      "name": "steady-2-ui-near",
+      "fps": 102.1960113499882,
+      "p50_ms": 9.688,
+      "p95_ms": 11.0184,
+      "p99_ms": 11.6462,
+      "effective_far_radius": 8,
+      "cpu_payload_bytes": 64826696,
+      "gpu_mesh_bytes": 4511520
+    },
+    {
+      "name": "steady-3-plain-lod",
+      "fps": 55.567870122126145,
+      "p50_ms": 17.7867,
+      "p95_ms": 19.0372,
+      "p99_ms": 21.0596,
+      "effective_far_radius": 19,
+      "cpu_payload_bytes": 253996756,
+      "gpu_mesh_bytes": 78512944
+    },
+    {
+      "name": "steady-3-plain-near",
+      "fps": 107.83518023184116,
+      "p50_ms": 9.339,
+      "p95_ms": 10.2293,
+      "p99_ms": 10.6449,
+      "effective_far_radius": 8,
+      "cpu_payload_bytes": 64826696,
+      "gpu_mesh_bytes": 4511520
+    },
+    {
+      "name": "steady-3-ui-lod",
+      "fps": 52.69471267581714,
+      "p50_ms": 18.7812,
+      "p95_ms": 20.4527,
+      "p99_ms": 22.279,
+      "effective_far_radius": 19,
+      "cpu_payload_bytes": 253996756,
+      "gpu_mesh_bytes": 78512944
+    },
+    {
+      "name": "steady-3-ui-near",
+      "fps": 102.19964209738626,
+      "p50_ms": 9.7059,
+      "p95_ms": 11.0194,
+      "p99_ms": 11.8169,
+      "effective_far_radius": 8,
+      "cpu_payload_bytes": 64826696,
+      "gpu_mesh_bytes": 4511520
+    },
+    {
+      "name": "steady-4-plain-lod",
+      "fps": 55.998606333852535,
+      "p50_ms": 17.7056,
+      "p95_ms": 18.5346,
+      "p99_ms": 19.1016,
+      "effective_far_radius": 19,
+      "cpu_payload_bytes": 253996756,
+      "gpu_mesh_bytes": 78512944
+    },
+    {
+      "name": "steady-4-plain-near",
+      "fps": 107.94689264757821,
+      "p50_ms": 9.3505,
+      "p95_ms": 10.215,
+      "p99_ms": 10.5595,
+      "effective_far_radius": 8,
+      "cpu_payload_bytes": 64826696,
+      "gpu_mesh_bytes": 4511520
+    },
+    {
+      "name": "steady-4-ui-lod",
+      "fps": 52.95695852586539,
+      "p50_ms": 18.8537,
+      "p95_ms": 19.9085,
+      "p99_ms": 20.8224,
+      "effective_far_radius": 19,
+      "cpu_payload_bytes": 253996756,
+      "gpu_mesh_bytes": 78512944
+    },
+    {
+      "name": "steady-4-ui-near",
+      "fps": 101.72318644692909,
+      "p50_ms": 9.7118,
+      "p95_ms": 11.0092,
+      "p99_ms": 11.7121,
+      "effective_far_radius": 8,
+      "cpu_payload_bytes": 64826696,
+      "gpu_mesh_bytes": 4511520
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.5.0] - Unreleased
+## [1.5.0] - 2026-10-16
 
 - Established first-party formatting/EditorConfig/Git attributes, contribution/development/style guides,
   ADRs, explicit historical documentation and the fixed seed/camera/resolution benchmark baseline.
@@ -17,6 +17,9 @@
   experimental scalar-only macOS ARM64 CI. Actual qualification is recorded in PERFORMANCE.md.
 - Preserved the existing worldgen versions/reference GCC output and all 112 material PNGs.
   No gameplay changes or disk persistence of edits/fluid journals were added.
+- Qualified a fixed five-repeat hardware baseline and all mandatory Windows/Linux CI gates;
+  documented toolchain-scoped determinism, sanitizer overhead and package relocation evidence.
+- Stabilized automated GPU spawn readiness without changing the normal player spawn path.
 
 
 ## [1.4.0] - 2026-10-14

@@ -7,7 +7,7 @@
 2. Download `package-msvc`, `package-mingw`, and `package-gcc` from that exact run.
    Verify each SHA-256 sidecar before extraction. Never publish dirty local builds.
 3. On the qualified Windows hardware/driver, validate both ZIPs with
-   `.github/scripts/validate_package.py <archive> --gpu --expected-commit <sha>`.
+   `.github/scripts/validate_package.py <archive> --full-gpu --expected-commit <sha>`.
    Run the five GPU fixtures against the extracted binaries, including LOD reversal
    and positive/negative floating-origin coordinates. Keep outputs/worlds outside the
    package, not in a player's default world. Record driver, commit and test outcomes.

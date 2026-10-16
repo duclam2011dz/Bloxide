@@ -1,28 +1,57 @@
 # Bloxide performance and validation
 
-## v1.5.0 portability qualification (in progress)
+## v1.5.0 portability and fixed baseline — 2026-10-16
 
-This section is not a relabeling of v1.4 measurements below. Portable-build/release gates
-must identify the exact tested commit, provider, compiler/OS/architecture and package.
+These are new measurements, not relabeled v1.4 results. The complete baseline is versioned in
+benchmarks/baselines/v1.5-fixed.json and assets/benchmarks/v1.5-world.meta. The latter is shipped
+and explicitly loaded by the profiler, rather than inferred from current defaults.
 
-Development smoke on Windows UCRT64 GCC 16.1 with the system SDL2 provider passed 12/12
-headless tests (27.74 s) and 5/5 real-driver GPU tests (123.05 s), including the six-move/reversal
-LOD fixture. The relocated ZIP passed strict asset validation (missing/corrupt rejection),
-Unicode executable paths, a different cwd, a write-denied install prefix, native child profiler
-and hardware GL smoke. These were dirty development builds, not final tagged packages.
+### Hardware baseline
 
-Scalar-only compiled without either x86 SIMD translation unit, passed subprocess/capability tests
-and retained density-world-1 seed-130 hashes. All three generator probe sets exactly match the
-v1.4 reference in benchmarks/baselines/v1.4-reference-hashes.txt. No PNG was regenerated.
+Clean commit 8a409d8af4409e5bd39c05116461cedef055c1fa; Windows x64, UCRT64 GCC 16.1.0,
+Release -O3, strict FP, pinned vcpkg/SDL2 2.32.10#1, scalar sampling. Intel i5-6400,
+4,251,672,576 bytes RAM, GeForce GT 720, OpenGL 3.3.0/NVIDIA 461.92.
+Seed 130/density-world-1/mountainous; config fingerprint 31358b68611bb560;
+1280x720, camera [8.5,160,72.5], yaw/pitch [-90,-25], VSync off, CPU/GPU budgets 512/128 MiB.
+Each variant has five independent readiness waits, 5 s warmups and 30 s sample windows.
+All 20 runs completed. No local build or second GPU workload ran during sampling.
 
-BloxideProfiler --baseline --quick completed all four steady near/LOD x overlay variants.
-Its camera metadata was [8.5,160,72.5], yaw/pitch [-90,-25], framebuffer [1280,720],
-budgets 512/128 MiB and canonical world-config fingerprint 31358b68611bb560.
-These 2 s smoke windows are explicitly NOT qualified performance windows; do not use their FPS
-as the five-repeat hardware baseline. Full windows are 5 s warmup, 30 s samples, five repeats.
+The table reports the median of the five per-run metrics, not pooled-frame percentiles:
 
-CI and canonical pinned-vcpkg qualification remain pending at this point. The release tag must
-not be created until mandatory clean-runner, sanitizer, Mesa and relocated-package gates pass.
+| Variant | FPS | p50 ms | p95 ms | p99 ms | effective radius |
+|---|---:|---:|---:|---:|---:|
+| Near, DevTools off | 107.84 | 9.351 | 10.229 | 10.740 | 8 |
+| Near, DevTools on | 101.72 | 9.712 | 11.019 | 11.712 | 8 |
+| LOD, DevTools off | 55.57 | 17.788 | 19.145 | 21.060 | 19 |
+| LOD, DevTools on | 52.96 | 18.781 | 19.909 | 21.045 | 19 |
+
+All LOD runs requested radius 24 but settled at 19 under the resource policy. Near and LOD
+therefore have different workloads; their FPS ratio is not an optimization speedup. Tracked
+CPU/GPU mesh payload was 64,826,696/4,511,520 bytes near and 253,996,756/78,512,944 bytes LOD.
+Payload is not total process RAM or driver VRAM utilization. Per-run evidence is committed in
+benchmarks/reports/v1.5-fixed-windows-gcc16.1.json; raw CSV/captures remain ignored under out/.
+Quick/headless timings are not hardware FPS. No cross-version speedup is claimed.
+
+### Qualification evidence
+
+Candidate b540624 passed the complete [Portability workflow](https://github.com/duclam2011dz/Bloxide/actions/runs/38903323885):
+all ten compiler/configuration builds, format, ASan+UBSan (12/12, 367.23 s), TSan
+(12/12, 479.13 s), full Mesa GPU (5/5, 115.23 s), three relocated-package jobs and experimental
+macOS ARM64 headless. Sanitizers keep complete workloads with bounded instrumentation-specific
+deadlines and no project race suppressions. Windows GCC 16.1/pinned SDL also passed 17/17 locally:
+23.12 s headless plus 140.80 s real-driver GPU. These test durations are not FPS.
+Both CI-produced Windows ZIPs also passed all five real-driver fixtures when relocated/read-only;
+see docs/qualification/v1.5.0.md for package/compiler-specific timings and scope.
+
+Compiler profiles export 36 exact block probes
+across three generator versions and seeds 0/130/max, including negative/extreme coordinates,
+with independent process/order/worker equality checks. At commit 47c6b66, GNU 12.3 Linux,
+Clang 15.0.7 Linux, MSVC 19.44 Windows and GNU 16.2 Windows differed in 0/36 probes.
+This finite corpus is evidence, not a cross-toolchain determinism guarantee.
+
+Windows GCC 16.1 retains all reference hashes in benchmarks/baselines/v1.4-reference-hashes.txt.
+Scalar-only builds omit x86 SIMD objects; macOS ARM64 build/headless is experimental, not GPU
+qualification. All 112 PNGs remain byte-identical. Legacy metadata is not migrated.
 
 
 ## v1.4.0 - 2026-10-14

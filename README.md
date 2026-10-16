@@ -8,6 +8,7 @@ resource lifecycle, reproducible diagnostics and distribution, not new gameplay.
 Release targets: Windows 10/11 x64 (MSVC or MSYS2 UCRT64 GCC), Ubuntu 22.04+ x64
 (GCC/Clang, X11 or XWayland). macOS ARM64 is experimental; OpenGL is deprecated there.
 Platform support is conditional on the actual qualification report, not a successful local build.
+See [v1.5 qualification](docs/qualification/v1.5.0.md) and [release procedure](docs/RELEASE.md).
 
 Install Git, CMake >=3.25, Ninja and a C++17 compiler. OpenGL comes from your OS/GPU driver,
 not vcpkg. Linux additionally needs X11/OpenGL development packages; see DEVELOPMENT.md.

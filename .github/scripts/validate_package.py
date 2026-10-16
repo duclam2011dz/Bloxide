@@ -8,12 +8,23 @@ import shutil
 import stat
 import subprocess
 import tempfile
+import time
 
 parser = argparse.ArgumentParser()
 parser.add_argument("archive", type=Path)
 parser.add_argument("--gpu", action="store_true")
+parser.add_argument("--full-gpu", action="store_true",
+                    help="Run all five hardware fixtures against the relocated package")
 parser.add_argument("--expected-commit")
 args = parser.parse_args()
+sidecar = args.archive.with_name(args.archive.name + ".sha256")
+expected = sidecar.read_text(encoding="utf-8").split()[0].lower()
+digest = hashlib.sha256()
+with args.archive.open("rb") as archive:
+    for part in iter(lambda: archive.read(1024 * 1024), b""):
+        digest.update(part)
+if len(expected) != 64 or digest.hexdigest() != expected:
+    raise RuntimeError("Archive SHA-256 mismatch: " + args.archive.name)
 with tempfile.TemporaryDirectory(prefix="bloxide-package-") as temporary:
     work = Path(temporary)
     extract = work / "relocated space-việt"
@@ -31,6 +42,10 @@ with tempfile.TemporaryDirectory(prefix="bloxide-package-") as temporary:
     notices = prefix / "share/licenses/Bloxide"
     if not (notices / "THIRD_PARTY_NOTICES.md").is_file():
         raise RuntimeError("Missing license notices")
+    for name in ["LICENSE", "SDL2/copyright", "lodepng/LICENSE", "imgui/LICENSE.txt",
+                 "glad/LICENSE", "glad/Apache-2.0.txt", "glad/CC0-1.0.txt", "glad/khrplatform.h"]:
+        if not (notices / name).is_file():
+            raise RuntimeError("Missing license provenance: " + name)
     for name in ["voxel.vert", "voxel.frag", "heightmap.vert", "surface.vert"]:
         if not (game.parent / "shaders" / name).is_file():
             raise RuntimeError("Missing shader: " + name)
@@ -94,10 +109,21 @@ with tempfile.TemporaryDirectory(prefix="bloxide-package-") as temporary:
         manifest = json.loads((work / "native-profiler/manifest.json").read_text())
         if not manifest["suite_complete"] or manifest["build"]["commit"] != identity["commit"]:
             raise RuntimeError("Profiler provenance/incomplete suite")
-        if args.gpu:
-            run([game, "--smoke-test", "--no-lod", "--preset", "flat", "--caves", "off",
-                 "--seed", "130", "--world", work / "world",
-                 "--diagnostics-dir", work / "diagnostics"], timeout=1800)
+        fixtures = []
+        if args.full_gpu:
+            fixtures = [("Density", ["--no-lod", "--preset", "mountainous"]),
+                        ("Lod", ["--require-lod", "--preset", "mountainous", "--far-radius", "24"]),
+                        ("Legacy", []),
+                        ("Positive", ["--smoke-origin", "1099511627648"]),
+                        ("Negative", ["--smoke-origin", "-1099511627648"])]
+        elif args.gpu:
+            fixtures = [("relocated", ["--no-lod", "--preset", "flat", "--caves", "off"])]
+        for name, options in fixtures:
+            start = time.monotonic()
+            run([game, "--smoke-test", *options, "--seed", "130",
+                 "--world", work / name / "world",
+                 "--diagnostics-dir", work / name / "diagnostics"], timeout=1800)
+            print(name + " GPU fixture passed in %.2f s" % (time.monotonic() - start), flush=True)
         after = {p.relative_to(prefix).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
                  for p in prefix.rglob("*") if p.is_file()}
         if before != after:
@@ -111,4 +137,5 @@ with tempfile.TemporaryDirectory(prefix="bloxide-package-") as temporary:
             for p in prefix.rglob("*"):
                 p.chmod(p.stat().st_mode | stat.S_IWUSR)
     print(json.dumps({"package": args.archive.name, "build": identity,
-                      "relocated_readonly": True, "gpu_tested": args.gpu}))
+                      "relocated_readonly": True, "gpu_tested": bool(fixtures),
+                      "gpu_fixture_count": len(fixtures)}))
