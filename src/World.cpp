@@ -563,8 +563,9 @@ std::vector<UploadGroup> World::readyGroups() const {
             bool allReady = !farReady.empty();
             for (auto& [id, group] : groups_)
                 if (dependent(group) &&
-                    std::none_of(out.begin(), out.end(),
-                                 [&](const UploadGroup& g) { return g.id == id; }))
+                    std::none_of(out.begin(), out.end(), [wantedId = id](const UploadGroup& g) {
+                        return g.id == wantedId;
+                    }))
                     allReady = false;
             UploadGroup combined;
             if (allReady) {
@@ -683,7 +684,7 @@ std::vector<RenderChunk> World::renderChunksAt(const WorldPosition& p,
         if (distance(c, center) > 8) {
             if (!heightmapEnabled_ || distance(c, center) > distanceBudget_.effective ||
                 std::any_of(farVisible.begin(), farVisible.end(),
-                            [&](auto& t) { return t->input.coord == c; }))
+                            [coord = c](auto& t) { return t->input.coord == coord; }))
                 continue;
         }
         float dx = static_cast<float>(c.x - center.x), dz = static_cast<float>(c.z - center.z),

@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.5.0] - Unreleased
+
+- Established first-party formatting/EditorConfig/Git attributes, contribution/development/style guides,
+  ADRs, explicit historical documentation and the fixed seed/camera/resolution benchmark baseline.
+- Moved the real entry point to main.cpp and introduced RAII GameApplication shutdown with worker
+  joins before GL context destruction; shared --version/JSON build provenance across game/tools.
+- Replaced the custom mini-loader with official pinned GLAD 2.0.8 and audited dependency/asset notices.
+- Added architecture-gated scalar/SSE2/AVX2 builds, strict portable compiler flags, pinned vcpkg/SDL2,
+  Ninja presets and distinct headless/render targets.
+- Added UTF-8 executable/resource paths, writable user-data diagnostics, Windows/POSIX argv subprocesses
+  and bounded timeout/exit handling; validated PNG I/O without narrow Windows filename assumptions.
+- Added install/CPack ZIP/TGZ layouts, discovered runtime dependencies, relative Linux RPATH,
+  package identity/checksums/notices and source-independent Unicode/read-only relocation checks.
+- Added pinned-action Windows/Linux compiler matrices, mandatory Mesa/ASan+UBSan/TSan gates and
+  experimental scalar-only macOS ARM64 CI. Actual qualification is recorded in PERFORMANCE.md.
+- Preserved the existing worldgen versions/reference GCC output and all 112 material PNGs.
+  No gameplay changes or disk persistence of edits/fluid journals were added.
+
+
 ## [1.4.0] - 2026-10-14
 
 - Added density-world-1/schema-3 configuration, strong 3D overhang/cave terrain, climate fields and slope/depth-aware materials; preserved legacy world output/metadata.

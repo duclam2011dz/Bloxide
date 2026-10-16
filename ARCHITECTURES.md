@@ -1,4 +1,32 @@
-# Bloxide architecture - v1.4.0
+# Bloxide architecture - v1.5.0
+
+## Portable application boundary (v1.5)
+
+main.cpp parses ApplicationOptions and handles help/version/asset validation without initializing
+SDL, GL, worlds or workers. GameApplication owns the running lifecycle; RAII joins workers,
+stops telemetry/captures and releases GL resources before destroying the context.
+
+CMake targets separate bloxide_build (identity/strict flags/sanitizers), bloxide_assets (PNG),
+bloxide_core (world/physics/noise/platform subprocess/path APIs), bloxide_render (official GLAD),
+and bloxide_devtools (ImGui/SDL). Headless tools/tests do not depend on renderer/UI.
+
+Resources are executable-relative in bin/assets and bin/shaders; Linux bundled runtimes use
+lib with relative RPATH. Writable worlds/diagnostics are separate user-data paths. Native argv
+launching preserves UTF-8, exit/signal status and bounded timeout without invoking a shell.
+
+Main-thread GL ownership, immutable snapshots, revision/group publication and worldgen-version
+compatibility remain engine invariants. SIMD is compiled only for supported target architectures;
+runtime capability also requires the backend to have been compiled. No telemetry capability is
+a startup requirement beyond core rendering features.
+
+BuildInfo identifies version/commit/dirty/configuration/compiler/platform/optimization/sanitizer/
+SIMD/dependency baseline. Determinism profiles scope exact guarantees to toolchains, not all OSes.
+Reference GCC output remains pinned. See docs/adr/0001-portability-and-ownership.md.
+
+## v1.4 engine behavior retained in v1.5
+
+The following engine algorithms remain current. Historical target/lifecycle details, where
+mentioned below, are superseded by the portable boundary above.
 
 ## Current generation and ownership
 

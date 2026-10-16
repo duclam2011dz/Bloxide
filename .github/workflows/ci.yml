@@ -72,6 +72,8 @@ jobs:
         shell: pwsh
         if: runner.os == 'Windows'
         run: |
+          $env:VCPKG_ROOT = Join-Path $env:GITHUB_WORKSPACE 'build-tools/vcpkg'
+          "VCPKG_ROOT=$env:VCPKG_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
           New-Item -ItemType Directory -Force build-tools/vcpkg-cache | Out-Null
           & "$env:VCPKG_ROOT/bootstrap-vcpkg.bat" -disableMetrics
           if ($LASTEXITCODE) { exit $LASTEXITCODE }

@@ -1,5 +1,30 @@
 # Bloxide performance and validation
 
+## v1.5.0 portability qualification (in progress)
+
+This section is not a relabeling of v1.4 measurements below. Portable-build/release gates
+must identify the exact tested commit, provider, compiler/OS/architecture and package.
+
+Development smoke on Windows UCRT64 GCC 16.1 with the system SDL2 provider passed 12/12
+headless tests (27.74 s) and 5/5 real-driver GPU tests (123.05 s), including the six-move/reversal
+LOD fixture. The relocated ZIP passed strict asset validation (missing/corrupt rejection),
+Unicode executable paths, a different cwd, a write-denied install prefix, native child profiler
+and hardware GL smoke. These were dirty development builds, not final tagged packages.
+
+Scalar-only compiled without either x86 SIMD translation unit, passed subprocess/capability tests
+and retained density-world-1 seed-130 hashes. All three generator probe sets exactly match the
+v1.4 reference in benchmarks/baselines/v1.4-reference-hashes.txt. No PNG was regenerated.
+
+BloxideProfiler --baseline --quick completed all four steady near/LOD x overlay variants.
+Its camera metadata was [8.5,160,72.5], yaw/pitch [-90,-25], framebuffer [1280,720],
+budgets 512/128 MiB and canonical world-config fingerprint 31358b68611bb560.
+These 2 s smoke windows are explicitly NOT qualified performance windows; do not use their FPS
+as the five-repeat hardware baseline. Full windows are 5 s warmup, 30 s samples, five repeats.
+
+CI and canonical pinned-vcpkg qualification remain pending at this point. The release tag must
+not be created until mandatory clean-runner, sanitizer, Mesa and relocated-package gates pass.
+
+
 ## v1.4.0 - 2026-10-14
 
 ### Environment, scope and methodology
