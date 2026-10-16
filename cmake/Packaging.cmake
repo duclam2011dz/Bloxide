@@ -22,13 +22,23 @@ else()
     install(CODE "message(FATAL_ERROR \"SDL2 license missing: set BLOXIDE_SDL_LICENSE_FILE\")")
 endif()
 if(MINGW)
-    foreach(package gcc-libs winpthreads)
-        if(NOT IS_DIRECTORY "${compiler_prefix}/share/licenses/${package}")
-            message(FATAL_ERROR "MinGW runtime notices missing: ${package}")
+    set(gcc_notices FALSE)
+    set(pthread_notices FALSE)
+    foreach(package gcc-libs libgcc libstdc++ cc-libs winpthreads libwinpthread)
+        set(notice_dir "${compiler_prefix}/share/licenses/${package}")
+        if(IS_DIRECTORY "${notice_dir}")
+            install(DIRECTORY "${notice_dir}/" DESTINATION "share/licenses/Bloxide/${package}")
+            if(EXISTS "${notice_dir}/COPYING.RUNTIME")
+                set(gcc_notices TRUE)
+            endif()
+            if(package MATCHES "^(winpthreads|libwinpthread)$")
+                set(pthread_notices TRUE)
+            endif()
         endif()
-        install(DIRECTORY "${compiler_prefix}/share/licenses/${package}/"
-            DESTINATION "share/licenses/Bloxide/${package}")
     endforeach()
+    if(NOT gcc_notices OR NOT pthread_notices)
+        message(FATAL_ERROR "GCC Runtime Exception / winpthreads notices missing below ${compiler_prefix}/share/licenses")
+    endif()
 elseif(UNIX AND NOT APPLE)
     foreach(package libstdc++6 libgcc-s1)
         install(FILES "/usr/share/doc/${package}/copyright"
@@ -45,6 +55,7 @@ install(CODE "
         file(INSTALL DESTINATION \"\${root}/bin\" TYPE FILE FILES \${dlls})
     elseif(UNIX AND NOT APPLE)
         file(GET_RUNTIME_DEPENDENCIES EXECUTABLES \${programs}
+            DIRECTORIES \"$<TARGET_FILE_DIR:${BLOXIDE_SDL_TARGET}>\"
             RESOLVED_DEPENDENCIES_VAR dependencies UNRESOLVED_DEPENDENCIES_VAR missing
             PRE_EXCLUDE_REGEXES \"linux-vdso.*\"
             POST_EXCLUDE_REGEXES \".*/ld-linux.*\" \".*/lib(c|m|pthread|dl|rt|resolv)\\\\.so.*\"

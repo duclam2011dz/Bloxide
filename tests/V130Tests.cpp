@@ -15,6 +15,17 @@
 using namespace bloxide;
 std::atomic<bool> countAllocations{false};
 std::atomic<std::size_t> allocations{0};
+#ifndef __has_feature
+#define __has_feature(x) 0
+#endif
+#if defined(__SANITIZE_THREAD__) || __has_feature(thread_sanitizer)
+// TSan owns strong global new/delete interceptors. Keep the allocation-free
+// assertion using its public allocator hook instead of replacing interceptors.
+extern "C" void __sanitizer_malloc_hook(const volatile void*, std::size_t) {
+    if (countAllocations.load(std::memory_order_relaxed))
+        allocations.fetch_add(1, std::memory_order_relaxed);
+}
+#else
 void* operator new(std::size_t n) {
     if (countAllocations)
         ++allocations;
@@ -37,6 +48,7 @@ void operator delete(void* p, std::size_t) noexcept {
 void operator delete[](void* p, std::size_t) noexcept {
     std::free(p);
 }
+#endif
 void require(bool condition, const char* text) {
     if (!condition)
         throw std::runtime_error(text);
