@@ -540,7 +540,10 @@ int GameApplication::run(bool smokeTest) {
         world_->reportGpuPressure(renderer_.budgetPressure() ? world_->resourceLimits().gpuBytes
                                                              : renderer_.allocatedMeshBytes(),
                                   dt);
-        if (!benchmark_.enabled)
+        // Automated fixtures must not choose the water fallback while nearby dry
+        // spawn candidates are still arriving in worker-dependent order. Normal
+        // gameplay retains its existing incremental spawn behavior.
+        if (!benchmark_.enabled && (!smokeTest || spawned_ || world_->stats().ready == 289))
             update(dt);
         auto fluidStart = std::chrono::steady_clock::now();
         devFrame.phaseStartUs[3] =

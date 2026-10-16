@@ -66,6 +66,8 @@ hardware GPU results must identify the actual driver and commit.
 ## Baselines, provenance and assets
 
 benchmarks/baselines/v1.5-fixed.json defines seed/config/camera/resolution/budgets/windows.
+The complete 128-line world configuration is assets/benchmarks/v1.5-world.meta, shipped with
+packages and loaded explicitly by --baseline, rather than relying on current generator defaults.
 BloxideProfiler --baseline runs four near/LOD x overlay variants with five repeats by default.
 --quick is only tooling smoke, never a qualified performance window. Compare only compatible
 workload/determinism/hardware profiles; inspect effective distance, not only requested radius.
@@ -96,11 +98,11 @@ required locally; Ubuntu runs relocated GPU smoke under Mesa.
 
 World metadata persists; edits/fluid journals do not. Existing metadata is never rewritten merely
 because the executable/toolchain changes. New OS telemetry can be N/A without failing startup.
-# Sanitizer deadlines
+## Sanitizer deadlines
 
-TSan executes the same headless workloads and assertions with 10x internal
+ASan/UBSan and TSan execute the same headless workloads and assertions with 10x internal
 streaming deadlines to account for instrumentation overhead (the original 10 s
-benchmark and 180 s LOD readiness limits expired on CI). This does not alter
+benchmark and 180 s LOD readiness limits expired under both sanitizers on CI). This does not alter
 production simulation or performance thresholds; race detection remains enabled
 without project suppressions. CTest has a separate bounded outer timeout.
 

@@ -1,6 +1,7 @@
 {
   "schema": 1,
   "id": "bloxide-v1.5-fixed-130",
+  "world_configuration_asset": "assets/benchmarks/v1.5-world.meta",
   "seed": "130",
   "generator": "density-world-1",
   "preset": "mountainous",

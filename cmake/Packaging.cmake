@@ -45,7 +45,7 @@ elseif(UNIX AND NOT APPLE)
             DESTINATION "share/licenses/Bloxide/${package}")
     endforeach()
 endif()
-install(FILES README.md DEVELOPMENT.md CONTRIBUTING.md CODE_STYLE.md ARCHITECTURES.md PERFORMANCE.md
+install(FILES README.md DEVELOPMENT.md CONTRIBUTING.md CODE_STYLE.md ARCHITECTURES.md PERFORMANCE.md CHANGELOG.md docs/RELEASE.md
     DESTINATION share/doc/Bloxide)
 install(CODE "
     set(root \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}\")

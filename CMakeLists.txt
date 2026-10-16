@@ -30,7 +30,7 @@ else()
     message(FATAL_ERROR "SDL2 package exports neither SDL2::SDL2 nor SDL2::SDL2-static")
 endif()
 add_library(bloxide_build INTERFACE)
-if(BLOXIDE_SANITIZER STREQUAL "thread")
+if(NOT BLOXIDE_SANITIZER STREQUAL "none")
     # Instrumentation deadlines, not performance gates: retain the complete workloads.
     target_compile_definitions(bloxide_build INTERFACE BLOXIDE_TEST_TIMEOUT_SCALE=10)
 else()

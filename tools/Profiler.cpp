@@ -173,7 +173,9 @@ int main(int argc, char** argv) {
                 throw std::runtime_error("noise suite failed: " + read(root / "console.log"));
             result("noise", root / "summary.json");
         }
-        auto settings = WorldSettings::densityWorld();
+        auto settings =
+            baseline ? WorldSettings::load(executableRoot / "assets/benchmarks/v1.5-world.meta")
+                     : WorldSettings::densityWorld();
         settings.seed = seed;
         settings.save(out / "worldgen-config.meta");
         if (suite == "worldgen" || suite == "all") {
@@ -299,6 +301,16 @@ int main(int argc, char** argv) {
                                                (overlay ? "-ui" : "-plain") +
                                                (baseline ? (useLod ? "-lod" : "-near") : ""));
                             std::filesystem::create_directories(root);
+                            if (baseline) {
+                                const auto file = root / "world/world.meta";
+                                if (std::filesystem::exists(file) &&
+                                    read(file) != read(out / "worldgen-config.meta"))
+                                    throw std::runtime_error(
+                                        "Baseline world configuration differs; use a fresh output "
+                                        "directory");
+                                if (!std::filesystem::exists(file))
+                                    settings.save(file);
+                            }
                             if (scenario == "forest" || scenario == "village") {
                                 auto featureSettings = WorldSettings::densityWorld("flat");
                                 featureSettings.seed = seed;

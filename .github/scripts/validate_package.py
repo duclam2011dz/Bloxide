@@ -63,6 +63,8 @@ with tempfile.TemporaryDirectory(prefix="bloxide-package-") as temporary:
         raise RuntimeError("Package is dirty or belongs to another commit")
     run([game, "--validate-assets"])
     assets = game.parent / "assets"
+    if not (assets / "benchmarks/v1.5-world.meta").is_file():
+        raise RuntimeError("Missing versioned benchmark world configuration")
     missing = game.parent / "assets-hidden"
     assets.rename(missing)
     try:
