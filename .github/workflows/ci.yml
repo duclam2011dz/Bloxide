@@ -96,6 +96,7 @@ jobs:
           cmake --preset linux-${{ matrix.compiler }} -B out/ci -DCMAKE_C_COMPILER="$cc" -DCMAKE_CXX_COMPILER="$cxx" -DCMAKE_BUILD_TYPE=${{ matrix.config }} -DBLOXIDE_OPT_LEVEL=${{ matrix.opt }}
       - run: cmake --build out/ci --parallel 3
       - run: ctest --test-dir out/ci -L headless --output-on-failure --parallel 1
+      - run: python .github/scripts/export_determinism.py out/ci
       - name: Package
         if: matrix.config == 'Release' && matrix.opt == 3 && matrix.compiler != 'clang'
         run: cpack --config out/ci/CPackConfig.cmake -B out/ci/packages
@@ -113,7 +114,9 @@ jobs:
         if: always()
         with:
           name: tests-${{ matrix.os }}-${{ matrix.compiler }}-${{ matrix.config }}-O${{ matrix.opt }}
-          path: out/ci/Testing/Temporary/
+          path: |
+            out/ci/Testing/Temporary/
+            out/ci/determinism-profile.json
       - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         with:
