@@ -14,11 +14,11 @@ struct ChunkNeighbors {
 };
 
 class ChunkMesher {
-public:
+  public:
     [[nodiscard]] std::shared_ptr<ChunkMesh> build(ChunkCoord coord,
-                                                    const std::shared_ptr<const ChunkData>& center,
-                                                    const ChunkNeighbors& neighbors,
-                                                    std::uint8_t lod) const;
+                                                   const std::shared_ptr<const ChunkData>& center,
+                                                   const ChunkNeighbors& neighbors,
+                                                   std::uint8_t lod) const;
 };
 
 } // namespace bloxide

@@ -6,24 +6,26 @@
 int main() {
     using namespace bloxide;
     assert(ChunkData::Width == 16 && ChunkData::Height == 256 && ChunkData::Depth == 16);
-    const ChunkCoord negative = worldToChunk(-0.1f, -16.1f); assert(negative.x == -1 && negative.z == -2);
+    const ChunkCoord negative = worldToChunk(-0.1f, -16.1f);
+    assert(negative.x == -1 && negative.z == -2);
     assert(worldToLocal(-0.1f) == 15);
-    WorldSettings settings;settings.caveThreshold=0.99999;
+    WorldSettings settings;
+    settings.caveThreshold = 0.99999;
     ChunkGenerator generator(settings);
     const auto chunk = generator.generate({-1, 2});
     assert(chunk->get(0, 0, 0) == BlockType::Bedrock);
     assert(chunk->get(0, 1, 0) == BlockType::Stone);
-    const int height=ChunkGenerator::surfaceHeight(-16,32);
-    assert(chunk->get(0, height-1, 0) == BlockType::Dirt);
+    const int height = ChunkGenerator::surfaceHeight(-16, 32);
+    assert(chunk->get(0, height - 1, 0) == BlockType::Dirt);
     assert(chunk->get(0, height, 0) == BlockType::Grass);
-    assert(chunk->get(0, height+1, 0) == BlockType::Air);
+    assert(chunk->get(0, height + 1, 0) == BlockType::Air);
     assert(!chunk->set(0, 0, 0, BlockType::Air));
     assert(chunk->set(0, 64, 0, BlockType::Stone));
     ChunkMesher mesher;
     const auto mesh = mesher.build({0, 0}, chunk, {}, 0);
     assert(mesh->sourceVersion == chunk->version);
     assert(!mesh->vertices.empty() && !mesh->indices.empty());
-    const auto lod = mesher.build({0, 0}, generator.generate({0,0}), {}, 1);
+    const auto lod = mesher.build({0, 0}, generator.generate({0, 0}), {}, 1);
     assert(!lod->vertices.empty() && !lod->indices.empty());
     return 0;
 }

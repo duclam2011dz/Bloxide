@@ -15,19 +15,21 @@ struct ProfileFrame {
 };
 
 class Profiler {
-public:
+  public:
     void beginFrame();
     void beginPhase(const std::string& name);
     void endPhase(const std::string& name);
     void endFrame();
-    [[nodiscard]] const ProfileFrame& current() const noexcept { return current_; }
+    [[nodiscard]] const ProfileFrame& current() const noexcept {
+        return current_;
+    }
     [[nodiscard]] double phaseMs(const std::string& name) const;
     void clearHistory();
     bool writeCsv(const std::string& path) const;
     bool writeJson(const std::string& path) const;
     bool writeTrace(const std::string& path) const;
 
-private:
+  private:
     using Clock = std::chrono::steady_clock;
     std::unordered_map<std::string, Clock::time_point> starts_;
     ProfileFrame current_;

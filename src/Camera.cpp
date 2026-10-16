@@ -9,7 +9,8 @@ constexpr float Pi = 3.14159265358979323846f;
 
 std::array<float, 3> normalize(const std::array<float, 3>& v) {
     const float length = std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
-    if (length <= 0.0001f) return {0.0f, 0.0f, 0.0f};
+    if (length <= 0.0001f)
+        return {0.0f, 0.0f, 0.0f};
     return {v[0] / length, v[1] / length, v[2] / length};
 }
 
@@ -27,7 +28,8 @@ Camera::Camera() : position_{16.0f, 5.5f, 22.0f} {}
 std::array<float, 3> Camera::forward() const noexcept {
     const float yaw = yaw_ * Pi / 180.0f;
     const float pitch = pitch_ * Pi / 180.0f;
-    return normalize({std::cos(yaw) * std::cos(pitch), std::sin(pitch), std::sin(yaw) * std::cos(pitch)});
+    return normalize(
+        {std::cos(yaw) * std::cos(pitch), std::sin(pitch), std::sin(yaw) * std::cos(pitch)});
 }
 
 std::array<float, 3> Camera::right() const noexcept {
@@ -49,10 +51,22 @@ std::array<float, 16> Camera::viewMatrix() const noexcept {
     const auto f = forward();
     const auto s = normalize(cross(f, {0.0f, 1.0f, 0.0f}));
     const auto u = cross(s, f);
-    return {s[0], u[0], -f[0], 0.0f,
-            s[1], u[1], -f[1], 0.0f,
-            s[2], u[2], -f[2], 0.0f,
-            -dot(s, position_), -dot(u, position_), dot(f, position_), 1.0f};
+    return {s[0],
+            u[0],
+            -f[0],
+            0.0f,
+            s[1],
+            u[1],
+            -f[1],
+            0.0f,
+            s[2],
+            u[2],
+            -f[2],
+            0.0f,
+            -dot(s, position_),
+            -dot(u, position_),
+            dot(f, position_),
+            1.0f};
 }
 
 std::array<float, 16> Camera::projectionMatrix(float aspect) const noexcept {
@@ -60,10 +74,22 @@ std::array<float, 16> Camera::projectionMatrix(float aspect) const noexcept {
     const float f = 1.0f / std::tan(fov / 2.0f);
     const float nearPlane = 0.1f;
     const float farPlane = 768.0f;
-    return {f / aspect, 0.0f, 0.0f, 0.0f,
-            0.0f, f, 0.0f, 0.0f,
-            0.0f, 0.0f, (farPlane + nearPlane) / (nearPlane - farPlane), -1.0f,
-            0.0f, 0.0f, (2.0f * farPlane * nearPlane) / (nearPlane - farPlane), 0.0f};
+    return {f / aspect,
+            0.0f,
+            0.0f,
+            0.0f,
+            0.0f,
+            f,
+            0.0f,
+            0.0f,
+            0.0f,
+            0.0f,
+            (farPlane + nearPlane) / (nearPlane - farPlane),
+            -1.0f,
+            0.0f,
+            0.0f,
+            (2.0f * farPlane * nearPlane) / (nearPlane - farPlane),
+            0.0f};
 }
 
 } // namespace bloxide
