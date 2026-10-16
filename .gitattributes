@@ -1,0 +1,7 @@
+* text=auto eol=lf
+*.png -text
+*.exe -text
+*.dll -text
+*.zip -text
+*.gz -text
+*.bat text eol=crlf

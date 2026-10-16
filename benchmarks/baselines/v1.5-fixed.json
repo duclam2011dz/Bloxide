@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "id": "bloxide-v1.5-fixed-130",
+  "seed": "130",
+  "generator": "density-world-1",
+  "preset": "mountainous",
+  "resolution": [1280, 720],
+  "camera_world": [8.5, 160.0, 72.5],
+  "camera_yaw_pitch": [-90.0, -25.0],
+  "backend": "scalar",
+  "vsync": false,
+  "cpu_budget_mib": 512,
+  "gpu_budget_mib": 128,
+  "near_radius": 8,
+  "far_requested_radius": 24,
+  "warmup_seconds": 5,
+  "sample_seconds": 30,
+  "repeats": 5,
+  "variants": ["near-plain", "near-ui", "lod-plain", "lod-ui"],
+  "hardware_reference": "Intel i5-6400; NVIDIA GT 720; 4251672576 bytes RAM; NVIDIA 461.92",
+  "comparison_policy": "Match workload, determinism profile and hardware; never compare Mesa FPS to hardware FPS."
+}
