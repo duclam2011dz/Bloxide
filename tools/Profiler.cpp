@@ -1,3 +1,8 @@
+#include <bloxide/BuildInfo.hpp>
+#include <bloxide/RuntimePaths.hpp>
+#include <bloxide/BuildInfo.hpp>
+#include <bloxide/RuntimePaths.hpp>
+#include <bloxide/ProcessRunner.hpp>
 #include <bloxide/World.hpp>
 #include <bloxide/SurfaceHierarchy.hpp>
 #include <bloxide/Telemetry.hpp>
@@ -10,13 +15,7 @@
 #include <thread>
 #include <cmath>
 #include <iomanip>
-#ifdef _WIN32
-#define WIN32_LEAN_AND_MEAN
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-#endif
+
 using namespace bloxide;
 namespace {
 using Clock = std::chrono::steady_clock;
@@ -31,77 +30,41 @@ std::string read(const std::filesystem::path& path) {
     std::ifstream f(path);
     return {std::istreambuf_iterator<char>(f), {}};
 }
-#ifdef _WIN32
-std::wstring quote(const std::wstring& text) {
-    std::wstring out = L"\"";
-    unsigned slashes = 0;
-    for (wchar_t c : text) {
-        if (c == L'\\') {
-            ++slashes;
-            continue;
-        }
-        out.append(c == L'\"' ? slashes * 2 + 1 : slashes, L'\\');
-        slashes = 0;
-        out.push_back(c);
-    }
-    out.append(slashes * 2, L'\\');
-    out.push_back(L'\"');
-    return out;
-}
-int launch(const std::filesystem::path& exe, const std::vector<std::wstring>& args,
+int launch(const std::filesystem::path& exe, const std::vector<std::string>& args,
            const std::filesystem::path& log, unsigned timeout) {
-    std::wstring command = quote(exe.wstring());
-    for (auto& arg : args)
-        command += L" " + quote(arg);
-    SECURITY_ATTRIBUTES security{sizeof(security), nullptr, TRUE};
-    HANDLE file = CreateFileW(log.c_str(), GENERIC_WRITE, FILE_SHARE_READ, &security, CREATE_ALWAYS,
-                              FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (file == INVALID_HANDLE_VALUE)
-        throw std::runtime_error("child log open failed");
-    STARTUPINFOW startup{};
-    startup.cb = sizeof(startup);
-    startup.dwFlags = STARTF_USESTDHANDLES;
-    startup.hStdOutput = file;
-    startup.hStdError = file;
-    startup.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
-    PROCESS_INFORMATION process{};
-    BOOL ok = CreateProcessW(exe.c_str(), command.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW,
-                             nullptr, nullptr, &startup, &process);
-    CloseHandle(file);
-    if (!ok)
-        throw std::runtime_error("benchmark child launch failed");
-    auto status = WaitForSingleObject(process.hProcess, timeout);
-    DWORD exit = 1;
-    if (status == WAIT_TIMEOUT) {
-        TerminateProcess(process.hProcess, 2);
-        WaitForSingleObject(process.hProcess, 5000);
-    }
-    GetExitCodeProcess(process.hProcess, &exit);
-    CloseHandle(process.hThread);
-    CloseHandle(process.hProcess);
-    return int(exit);
+    auto result = runProcess(exe, args, log, timeout);
+    if (result.timedOut)
+        throw std::runtime_error("Benchmark child timed out: " + exe.u8string());
+    return result.exitCode;
 }
-#else
-int launch(const std::filesystem::path&, const std::vector<std::wstring>&,
-           const std::filesystem::path&, unsigned) {
-    throw std::runtime_error("render suite launcher currently targets Windows");
-}
-#endif
+
 } // namespace
 int main(int argc, char** argv) {
+    if (bloxide::printVersionIfRequested(argc, argv))
+        return 0;
+    auto utf8Arguments = bloxide::platformArguments(argc, argv);
+    std::vector<char*> utf8Pointers;
+    for (auto& value : utf8Arguments)
+        utf8Pointers.push_back(value.data());
+    argc = int(utf8Pointers.size());
+    argv = utf8Pointers.data();
     try {
         std::string suite = "all", backendText = "scalar";
         NoiseBackend backend = NoiseBackend::Scalar;
-        bool quick = false, lod = true;
+        bool quick = false, lod = true, baseline = false;
         unsigned repeat = 5;
         double warmup = 5, duration = 30;
         std::uint64_t seed = 130;
-        std::filesystem::path out = "build/benchmark/v1.4";
+        std::filesystem::path out = diagnosticDirectory("profiler");
         for (int i = 1; i < argc; ++i) {
             std::string a = argv[i];
-            if (a == "--help") {
+            if (a == "--baseline") {
+                baseline = true;
+                suite = "baseline";
+            } else if (a == "--help") {
                 std::cout
-                    << "BloxideProfiler --suite noise|worldgen|streaming|fluid|render|all "
+                    << "BloxideProfiler [--baseline] --suite "
+                       "noise|worldgen|streaming|fluid|render|all "
                        "[--quick] [--seed UINT64] [--repeat 1..20] [--warmup SECONDS] [--duration "
                        "SECONDS] [--backend scalar|sse2|avx2|auto] [--lod on|off] [--output "
                        "DIRECTORY]\nDefault: five repeats, 5 s warmup, 30 s runtime sampling.\n";
@@ -114,7 +77,7 @@ int main(int argc, char** argv) {
             } else if (a == "--suite" && i + 1 < argc)
                 suite = argv[++i];
             else if (a == "--output" && i + 1 < argc)
-                out = argv[++i];
+                out = std::filesystem::u8path(argv[++i]);
             else if (a == "--seed" && i + 1 < argc)
                 seed = WorldSettings::parseSeed(argv[++i]);
             else if (a == "--repeat" && i + 1 < argc) {
@@ -149,31 +112,35 @@ int main(int argc, char** argv) {
                     "BloxideProfiler --suite noise|worldgen|streaming|fluid|render|all [--quick] "
                     "[--seed] [--repeat] [--warmup] [--duration] [--backend] [--lod] [--output]");
         }
-        if (suite != "all" && suite != "noise" && suite != "worldgen" && suite != "streaming" &&
-            suite != "fluid" && suite != "render")
+        baseline = baseline || suite == "baseline";
+        if (baseline)
+            suite = "baseline";
+        if (suite != "baseline" && suite != "all" && suite != "noise" && suite != "worldgen" &&
+            suite != "streaming" && suite != "fluid" && suite != "render")
             throw std::invalid_argument("invalid suite");
         if (repeat < 1 || repeat > 20 || !std::isfinite(warmup) || !std::isfinite(duration) ||
             warmup < 0 || warmup > 600 || duration <= 0 || duration > 600 ||
             !noiseBackendSupported(backend))
             throw std::invalid_argument("benchmark configuration");
+        if (baseline && (seed != 130 || backend != NoiseBackend::Scalar))
+            throw std::invalid_argument("Fixed baseline requires seed 130 and scalar backend");
         std::filesystem::create_directories(out);
         out = std::filesystem::absolute(out);
-        auto executableRoot = std::filesystem::absolute(argv[0]).parent_path();
-#ifdef _WIN32
-        std::array<wchar_t, 32768> modulePath{};
-        DWORD length = GetModuleFileNameW(nullptr, modulePath.data(), DWORD(modulePath.size()));
-        if (!length || length >= modulePath.size())
-            throw std::runtime_error("cannot resolve profiler executable path");
-        executableRoot =
-            std::filesystem::path(std::wstring(modulePath.data(), length)).parent_path();
-#endif
+        auto executableRoot = executableDirectory();
+
         HardwareTelemetry hardware;
         hardware.start();
         std::ofstream metadata(out / "manifest.json");
-        metadata << "{\"seed\":\"" << seed << "\",\"compiler\":\"" << __VERSION__
-                 << "\",\"build_type\":\"" << BLOXIDE_BENCHMARK_BUILD_TYPE
-                 << "\",\"optimization\":" << BLOXIDE_BENCHMARK_OPT_LEVEL << ",\"backend\":\""
-                 << backendText << "\",\"quick\":" << (quick ? "true" : "false") << ",\"runs\":[";
+        metadata << "{\"build\":" << buildInfoJson() << ",\"seed\":\"" << seed
+                 << "\",\"compiler\":\"" << BLOXIDE_COMPILER << "\",\"build_type\":\""
+                 << BLOXIDE_BENCHMARK_BUILD_TYPE
+                 << "\",\"optimization\":" << BLOXIDE_BENCHMARK_OPT_LEVEL << ",\"baseline_id\":"
+                 << std::quoted(baseline ? "bloxide-v1.5-fixed-130" : "custom")
+                 << ",\"baseline_qualified_window\":"
+                 << ((baseline && !quick && repeat == 5 && warmup == 5 && duration == 30) ? "true"
+                                                                                          : "false")
+                 << ",\"backend\":\"" << backendText
+                 << "\",\"quick\":" << (quick ? "true" : "false") << ",\"runs\":[";
         if (!metadata)
             throw std::runtime_error("cannot open benchmark manifest");
         bool manifestComplete = false;
@@ -196,13 +163,13 @@ int main(int argc, char** argv) {
         if (suite == "noise" || suite == "all") {
             auto root = out / "noise";
             std::filesystem::create_directories(root);
-            std::vector<std::wstring> args{L"--seed",   std::to_wstring(seed),
-                                           L"--repeat", std::to_wstring(repeat),
-                                           L"--output", root.wstring()};
+            std::vector<std::string> args{"--seed",   std::to_string(seed),
+                                          "--repeat", std::to_string(repeat),
+                                          "--output", root.u8string()};
             if (quick)
-                args.push_back(L"--quick");
-            if (launch(executableRoot / "BloxideNoiseLab.exe", args, root / "console.log",
-                       180000) != 0)
+                args.push_back("--quick");
+            if (launch(executableRoot / executableName("BloxideNoiseLab"), args,
+                       root / "console.log", 180000) != 0)
                 throw std::runtime_error("noise suite failed: " + read(root / "console.log"));
             result("noise", root / "summary.json");
         }
@@ -258,8 +225,8 @@ int main(int argc, char** argv) {
             if (!csv)
                 throw std::runtime_error("worldgen CSV write failed");
             std::ofstream summary(out / "worldgen-summary.json");
-            summary << std::setprecision(17) << "{\"seed\":\"" << seed
-                    << "\",\"samples\":" << times[0].size()
+            summary << std::setprecision(17) << "{\"build\":" << bloxide::buildInfoJson()
+                    << ",\"seed\":\"" << seed << "\",\"samples\":" << times[0].size()
                     << ",\"max_mesh_payload_bytes\":" << maxMesh << ",\"phases\":[";
             const char* names[]{"reference", "optimized", "meshing", "simplification"};
             for (unsigned i = 0; i < 4; ++i) {
@@ -315,60 +282,66 @@ int main(int argc, char** argv) {
                 throw std::runtime_error("fluid summary write failed");
             result("fluid", out / "fluid-summary.json");
         }
-        if (suite == "streaming" || suite == "render" || suite == "all") {
+        if (suite == "baseline" || suite == "streaming" || suite == "render" || suite == "all") {
             std::vector<std::string> scenarios =
                 suite == "streaming"
                     ? std::vector<std::string>{"cold", "traversal", "reversal", "budget"}
                     : std::vector<std::string>{"cold",    "steady",    "traversal", "reversal",
                                                "fluid",   "edit",      "budget",    "forest",
                                                "village", "underwater"};
-            for (auto& scenario : scenarios)
-                for (unsigned r = 0; r < repeat; ++r)
-                    for (bool overlay : {false, true}) {
-                        auto root = out / (scenario + "-" + std::to_string(r) +
-                                           (overlay ? "-ui" : "-plain"));
-                        std::filesystem::create_directories(root);
-                        if (scenario == "forest" || scenario == "village") {
-                            auto featureSettings = WorldSettings::densityWorld("flat");
-                            featureSettings.seed = seed;
-                            featureSettings.density.water = false;
-                            featureSettings.save(root / "world/world.meta");
+            if (baseline)
+                scenarios = {"steady"};
+            for (bool useLod : (baseline ? std::vector<bool>{false, true} : std::vector<bool>{lod}))
+                for (auto& scenario : scenarios)
+                    for (unsigned r = 0; r < repeat; ++r)
+                        for (bool overlay : {false, true}) {
+                            auto root = out / (scenario + "-" + std::to_string(r) +
+                                               (overlay ? "-ui" : "-plain") +
+                                               (baseline ? (useLod ? "-lod" : "-near") : ""));
+                            std::filesystem::create_directories(root);
+                            if (scenario == "forest" || scenario == "village") {
+                                auto featureSettings = WorldSettings::densityWorld("flat");
+                                featureSettings.seed = seed;
+                                featureSettings.density.water = false;
+                                featureSettings.save(root / "world/world.meta");
+                            }
+                            std::vector<std::string> args{
+                                "--benchmark-run",
+                                "--seed",
+                                std::to_string(seed),
+                                "--world",
+                                (root / "world").u8string(),
+                                "--warmup",
+                                std::to_string(scenario == "cold" ? 0 : warmup),
+                                "--duration",
+                                std::to_string(duration),
+                                "--scenario",
+                                scenario,
+                                "--benchmark-output",
+                                root.u8string(),
+                                "--benchmark-devtools",
+                                overlay ? "on" : "off",
+                                "--noise-backend",
+                                backendText};
+                            if (!useLod)
+                                args.push_back("--no-lod");
+                            if (scenario == "forest" || scenario == "village") {
+                                args.push_back("--preset");
+                                args.push_back("flat");
+                                args.push_back("--caves");
+                                args.push_back("off");
+                            }
+                            std::cout << "runtime " << scenario << " repeat=" << r
+                                      << " UI=" << overlay << std::endl;
+                            if (launch(executableRoot / executableName("Bloxide"), args,
+                                       root / "console.log",
+                                       unsigned((duration + 190) * 1000)) != 0)
+                                throw std::runtime_error("runtime suite failed: " +
+                                                         read(root / "console.log"));
+                            result(scenario + (overlay ? " UI" : " plain") +
+                                       (baseline ? (useLod ? " LOD" : " near") : ""),
+                                   root / "runtime-summary.json");
                         }
-                        std::vector<std::wstring> args{
-                            L"--benchmark-run",
-                            L"--seed",
-                            std::to_wstring(seed),
-                            L"--world",
-                            (root / "world").wstring(),
-                            L"--warmup",
-                            std::to_wstring(scenario == "cold" ? 0 : warmup),
-                            L"--duration",
-                            std::to_wstring(duration),
-                            L"--scenario",
-                            std::wstring(scenario.begin(), scenario.end()),
-                            L"--benchmark-output",
-                            root.wstring(),
-                            L"--benchmark-devtools",
-                            overlay ? L"on" : L"off",
-                            L"--noise-backend",
-                            std::wstring(backendText.begin(), backendText.end())};
-                        if (!lod)
-                            args.push_back(L"--no-lod");
-                        if (scenario == "forest" || scenario == "village") {
-                            args.push_back(L"--preset");
-                            args.push_back(L"flat");
-                            args.push_back(L"--caves");
-                            args.push_back(L"off");
-                        }
-                        std::cout << "runtime " << scenario << " repeat=" << r << " UI=" << overlay
-                                  << std::endl;
-                        if (launch(executableRoot / "Bloxide.exe", args, root / "console.log",
-                                   unsigned((duration + 190) * 1000)) != 0)
-                            throw std::runtime_error("runtime suite failed: " +
-                                                     read(root / "console.log"));
-                        result(scenario + (overlay ? " UI" : " plain"),
-                               root / "runtime-summary.json");
-                    }
         }
         auto snapshot = hardware.snapshot();
         metadata << "],\"process_working_set_bytes\":" << snapshot.workingSet

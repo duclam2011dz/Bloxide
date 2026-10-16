@@ -1,202 +1,213 @@
-cmake_minimum_required(VERSION 3.20)
-
-project(Bloxide VERSION 1.4.0 LANGUAGES C CXX)
-
+cmake_minimum_required(VERSION 3.25)
+project(Bloxide VERSION 1.5.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
-    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build configuration" FORCE)
 endif()
-
-find_package(SDL2 CONFIG REQUIRED)
-find_package(OpenGL REQUIRED)
-set(BLOXIDE_OPT_LEVEL "3" CACHE STRING "Release optimization level: 2 or 3")
+set(BLOXIDE_OPT_LEVEL "3" CACHE STRING "GCC/Clang Release optimization: 2 or 3")
+set(BLOXIDE_SANITIZER "none" CACHE STRING "none, address-undefined, thread")
+set(BLOXIDE_COMMIT_OVERRIDE "" CACHE STRING "Source archive provenance, otherwise unknown")
+option(BLOXIDE_ENABLE_SIMD "Compile supported x86 SIMD backends" ON)
+option(BLOXIDE_RENDER_TESTS "Driver-backed GL 3.3 regression tests" OFF)
+set(BLOXIDE_GPU_TIMEOUT 1800 CACHE STRING "Seconds allowed per driver test")
 if(NOT BLOXIDE_OPT_LEVEL MATCHES "^[23]$")
     message(FATAL_ERROR "BLOXIDE_OPT_LEVEL must be 2 or 3")
 endif()
+if(NOT BLOXIDE_SANITIZER MATCHES "^(none|address-undefined|thread)$")
+    message(FATAL_ERROR "Unknown sanitizer")
+endif()
+find_package(Threads REQUIRED)
+find_package(SDL2 CONFIG REQUIRED)
+find_package(OpenGL REQUIRED)
+if(TARGET SDL2::SDL2)
+    set(BLOXIDE_SDL_TARGET SDL2::SDL2)
+elseif(TARGET SDL2::SDL2-static)
+    set(BLOXIDE_SDL_TARGET SDL2::SDL2-static)
+else()
+    message(FATAL_ERROR "SDL2 package exports neither SDL2::SDL2 nor SDL2::SDL2-static")
+endif()
+add_library(bloxide_build INTERFACE)
+set(BLOXIDE_GIT_COMMIT unknown)
+set(BLOXIDE_GIT_DIRTY 0)
+find_package(Git QUIET)
+if(Git_FOUND AND EXISTS "${CMAKE_SOURCE_DIR}/.git")
+    execute_process(COMMAND "${GIT_EXECUTABLE}" -c "safe.directory=${CMAKE_SOURCE_DIR}" rev-parse HEAD
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" OUTPUT_VARIABLE BLOXIDE_GIT_COMMIT OUTPUT_STRIP_TRAILING_WHITESPACE)
+    execute_process(COMMAND "${GIT_EXECUTABLE}" -c "safe.directory=${CMAKE_SOURCE_DIR}" status --porcelain
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" OUTPUT_VARIABLE dirty)
+    if(dirty)
+        set(BLOXIDE_GIT_DIRTY 1)
+    endif()
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        "${CMAKE_SOURCE_DIR}/.git/HEAD" "${CMAKE_SOURCE_DIR}/.git/index")
+endif()
+if(BLOXIDE_COMMIT_OVERRIDE)
+    if(NOT BLOXIDE_COMMIT_OVERRIDE MATCHES "^[0-9a-fA-F]+$")
+        message(FATAL_ERROR "Commit override must be hexadecimal")
+    endif()
+    set(BLOXIDE_GIT_COMMIT "${BLOXIDE_COMMIT_OVERRIDE}")
+endif()
+include(CheckCXXCompilerFlag)
+set(BLOXIDE_HAS_SSE2 0)
+set(BLOXIDE_HAS_AVX2 0)
+set(noise_sources src/NoiseBatch.cpp)
+string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" target_arch)
+if(BLOXIDE_ENABLE_SIMD AND target_arch MATCHES "^(x86_64|amd64|x64|i[3-6]86)$")
+    if(MSVC)
+        set(BLOXIDE_HAS_SSE2 1)
+        check_cxx_compiler_flag("/arch:AVX2" compiler_avx2)
+        if(compiler_avx2)
+            set(BLOXIDE_HAS_AVX2 1)
+            set_source_files_properties(src/NoiseAvx2.cpp PROPERTIES COMPILE_OPTIONS "/arch:AVX2")
+        endif()
+    else()
+        check_cxx_compiler_flag("-msse2" compiler_sse2)
+        check_cxx_compiler_flag("-mavx2" compiler_avx2)
+        if(compiler_sse2)
+            set(BLOXIDE_HAS_SSE2 1)
+            set_source_files_properties(src/NoiseSse2.cpp PROPERTIES COMPILE_OPTIONS "-msse2")
+        endif()
+        if(compiler_avx2)
+            set(BLOXIDE_HAS_AVX2 1)
+            set_source_files_properties(src/NoiseAvx2.cpp PROPERTIES COMPILE_OPTIONS "-mavx2;-mno-fma")
+        endif()
+    endif()
+endif()
+if(BLOXIDE_HAS_SSE2)
+    list(APPEND noise_sources src/NoiseSse2.cpp)
+endif()
+if(BLOXIDE_HAS_AVX2)
+    list(APPEND noise_sources src/NoiseAvx2.cpp)
+endif()
+configure_file(cmake/BuildConfig.hpp.in generated/bloxide/BuildConfig.hpp @ONLY)
+target_include_directories(bloxide_build INTERFACE include "${CMAKE_BINARY_DIR}/generated")
+if(MSVC)
+    set(release_flag /O2)
+    set(actual_level 2)
+    target_compile_options(bloxide_build INTERFACE "$<$<COMPILE_LANGUAGE:CXX>:/fp:strict;/W4;/permissive->")
+else()
+    set(release_flag "-O${BLOXIDE_OPT_LEVEL}")
+    set(actual_level "${BLOXIDE_OPT_LEVEL}")
+    target_compile_options(bloxide_build INTERFACE
+        "$<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wpedantic;-fno-fast-math;-ffp-contract=off>"
+        "$<$<CONFIG:Release>:${release_flag}>")
+endif()
+target_compile_definitions(bloxide_build INTERFACE SDL_MAIN_HANDLED
+    "BLOXIDE_BUILD_CONFIGURATION=\"$<CONFIG>\""
+    "BLOXIDE_ACTUAL_OPTIMIZATION=\"$<IF:$<CONFIG:Release>,${release_flag},$<IF:$<CONFIG:Debug>,debug,toolchain-default>>\""
+    "BLOXIDE_BENCHMARK_BUILD_TYPE=\"$<CONFIG>\""
+    "BLOXIDE_BENCHMARK_OPT_LEVEL=$<IF:$<CONFIG:Release>,${actual_level},$<IF:$<CONFIG:Debug>,0,-1>>")
+if(NOT BLOXIDE_SANITIZER STREQUAL "none")
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU" OR WIN32)
+        message(FATAL_ERROR "Canonical sanitizer builds require Linux GCC/Clang")
+    endif()
+    if(BLOXIDE_SANITIZER STREQUAL "thread")
+        set(sanitize_flags -fsanitize=thread)
+    else()
+        set(sanitize_flags -fsanitize=address,undefined -fno-sanitize-recover=all)
+    endif()
+    target_compile_options(bloxide_build INTERFACE ${sanitize_flags} -fno-omit-frame-pointer -g)
+    target_link_options(bloxide_build INTERFACE ${sanitize_flags})
+endif()
+add_library(lodepng STATIC third_party/lodepng/lodepng.cpp)
+target_include_directories(lodepng PUBLIC third_party/lodepng)
+add_library(bloxide_assets STATIC src/Assets.cpp src/TextureGenerator.cpp)
+target_link_libraries(bloxide_assets PUBLIC bloxide_build lodepng)
+add_library(bloxide_core STATIC src/Block.cpp src/Camera.cpp src/Chunk.cpp src/ChunkGenerator.cpp
+    src/DensityWorld.cpp src/Heightmap.cpp src/SurfaceHierarchy.cpp src/ChunkMesher.cpp
+    src/Profiler.cpp src/Trace.cpp src/Telemetry.cpp src/Physics.cpp src/Fluid.cpp src/Noise.cpp
+    ${noise_sources} src/WorldSettings.cpp src/Targeting.cpp src/World.cpp
+    src/RuntimePaths.cpp src/ProcessRunner.cpp)
+target_link_libraries(bloxide_core PUBLIC bloxide_build bloxide_assets Threads::Threads)
+if(WIN32)
+    target_link_libraries(bloxide_core PUBLIC psapi pdh dxgi dxguid advapi32 shell32)
+endif()
+add_library(glad STATIC third_party/glad/src/gl.c)
+target_include_directories(glad PUBLIC third_party/glad/include)
 add_library(imgui STATIC third_party/imgui/imgui.cpp third_party/imgui/imgui_draw.cpp
     third_party/imgui/imgui_widgets.cpp third_party/imgui/imgui_tables.cpp
     third_party/imgui/backends/imgui_impl_sdl2.cpp third_party/imgui/backends/imgui_impl_opengl3.cpp)
 target_include_directories(imgui PUBLIC third_party/imgui third_party/imgui/backends)
-target_link_libraries(imgui PUBLIC SDL2::SDL2 OpenGL::GL)
-
-add_library(lodepng STATIC third_party/lodepng/lodepng.cpp)
-target_include_directories(lodepng PUBLIC third_party/lodepng)
-add_library(bloxide_assets STATIC src/Assets.cpp src/TextureGenerator.cpp)
-target_include_directories(bloxide_assets PUBLIC include)
-target_link_libraries(bloxide_assets PUBLIC lodepng)
-if(MSVC)
-    target_compile_options(bloxide_assets PRIVATE /W4 /permissive-)
-else()
-    target_compile_options(bloxide_assets PRIVATE -Wall -Wextra -Wpedantic)
-endif()
-add_executable(BloxideTextureGenerator tools/TextureGenerator.cpp)
-target_link_libraries(BloxideTextureGenerator PRIVATE bloxide_assets)
-
-add_library(glad STATIC
-    third_party/glad/src/glad.c
-)
-target_include_directories(glad PUBLIC third_party/glad/include)
-
-add_library(bloxide_core STATIC
-    src/Block.cpp
-    src/Camera.cpp
-    src/Chunk.cpp
-    src/ChunkGenerator.cpp
-    src/DensityWorld.cpp
-    src/Heightmap.cpp
-    src/SurfaceHierarchy.cpp
-    src/ChunkMesher.cpp
-    src/Profiler.cpp
-    src/Trace.cpp
-    src/Telemetry.cpp
-    src/Physics.cpp
-    src/Fluid.cpp
-    src/Noise.cpp
-    src/NoiseBatch.cpp
-    src/NoiseSse2.cpp
-    src/NoiseAvx2.cpp
-    src/WorldSettings.cpp
-    src/Targeting.cpp
-    src/Renderer.cpp
-    src/World.cpp
-)
-target_include_directories(bloxide_core PUBLIC include)
-if(MSVC)
-    set_source_files_properties(src/NoiseAvx2.cpp PROPERTIES COMPILE_OPTIONS "/arch:AVX2")
-else()
-    set_source_files_properties(src/NoiseSse2.cpp PROPERTIES COMPILE_OPTIONS "-msse2")
-    set_source_files_properties(src/NoiseAvx2.cpp PROPERTIES COMPILE_OPTIONS "-mavx2;-mno-fma")
-endif()
-target_link_libraries(bloxide_core PUBLIC glad bloxide_assets)
-if(WIN32)
-    target_link_libraries(bloxide_core PUBLIC psapi pdh dxgi dxguid advapi32)
-endif()
-target_compile_definitions(bloxide_core PUBLIC SDL_MAIN_HANDLED)
-target_compile_definitions(bloxide_core PUBLIC BLOXIDE_OPT_LEVEL_USED=${BLOXIDE_OPT_LEVEL})
-
-if(MSVC)
-    target_compile_options(bloxide_core PRIVATE /W4 /permissive- /fp:strict)
-else()
-    target_compile_options(bloxide_core PRIVATE -Wall -Wextra -Wpedantic -fno-fast-math -ffp-contract=off)
-    target_compile_options(bloxide_core PRIVATE "$<$<CONFIG:Release>:-O${BLOXIDE_OPT_LEVEL}>")
-endif()
-
-add_executable(Bloxide
-    src/Game.cpp
-    src/main.cpp
-)
+target_link_libraries(imgui PUBLIC ${BLOXIDE_SDL_TARGET} OpenGL::GL)
+add_library(bloxide_render STATIC src/Renderer.cpp)
+target_link_libraries(bloxide_render PUBLIC bloxide_core glad)
 add_library(bloxide_devtools STATIC src/DevTools.cpp)
-target_include_directories(bloxide_devtools PUBLIC include)
-target_link_libraries(bloxide_devtools PUBLIC bloxide_core imgui)
-target_include_directories(Bloxide PRIVATE include)
-target_compile_definitions(Bloxide PRIVATE
-    SDL_MAIN_HANDLED
-    BLOXIDE_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
-)
-target_link_libraries(Bloxide PRIVATE bloxide_core bloxide_devtools SDL2::SDL2 OpenGL::GL)
+target_link_libraries(bloxide_devtools PUBLIC bloxide_render imgui)
+add_executable(Bloxide src/Game.cpp src/main.cpp)
+target_link_libraries(Bloxide PRIVATE bloxide_devtools ${BLOXIDE_SDL_TARGET} OpenGL::GL)
+set(BLOXIDE_EXECUTABLES Bloxide)
+foreach(tool Benchmark NoiseBenchmark NoiseLab TerrainBenchmark Profiler TextureGenerator)
+    add_executable(Bloxide${tool} tools/${tool}.cpp)
+    target_link_libraries(Bloxide${tool} PRIVATE bloxide_core)
+    list(APPEND BLOXIDE_EXECUTABLES Bloxide${tool})
+endforeach()
 add_custom_target(BloxideRuntimeAssets ALL
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/assets" "$<TARGET_FILE_DIR:Bloxide>/assets"
-    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/shaders" "$<TARGET_FILE_DIR:Bloxide>/shaders"
-    VERBATIM)
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/shaders" "$<TARGET_FILE_DIR:Bloxide>/shaders")
 add_dependencies(Bloxide BloxideRuntimeAssets)
-
-add_executable(BloxideBenchmark
-    tools/Benchmark.cpp
-)
-add_executable(BloxideNoiseBenchmark tools/NoiseBenchmark.cpp)
-add_executable(BloxideNoiseLab tools/NoiseLab.cpp)
-target_link_libraries(BloxideNoiseLab PRIVATE bloxide_core)
-add_executable(BloxideProfiler tools/Profiler.cpp)
-target_link_libraries(BloxideProfiler PRIVATE bloxide_core)
-foreach(benchmark_target BloxideNoiseLab BloxideProfiler)
-    target_compile_definitions(${benchmark_target} PRIVATE
-        BLOXIDE_BENCHMARK_BUILD_TYPE="$<CONFIG>"
-        "BLOXIDE_BENCHMARK_OPT_LEVEL=$<IF:$<CONFIG:Debug>,0,$<IF:$<CONFIG:Release>,${BLOXIDE_OPT_LEVEL},-1>>")
-endforeach()
-add_executable(BloxideTerrainBenchmark tools/TerrainBenchmark.cpp)
-target_link_libraries(BloxideTerrainBenchmark PRIVATE bloxide_core)
-target_link_libraries(BloxideNoiseBenchmark PRIVATE bloxide_core)
-target_include_directories(BloxideBenchmark PRIVATE include)
-target_link_libraries(BloxideBenchmark PRIVATE bloxide_core)
-
-if(WIN32)
-    add_custom_command(TARGET Bloxide POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_PREFIX_PATH}/bin/SDL2.dll"
-            "$<TARGET_FILE_DIR:Bloxide>/SDL2.dll"
-        VERBATIM
-    )
-endif()
+get_filename_component(compiler_runtime_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
 
 include(CTest)
-option(BLOXIDE_RENDER_TESTS "Run SDL/OpenGL framebuffer regression test (requires GPU driver)" OFF)
 if(BUILD_TESTING)
-    add_executable(BloxideWorldTests
-        tests/WorldTests.cpp
-    )
-    target_include_directories(BloxideWorldTests PRIVATE include)
-    target_link_libraries(BloxideWorldTests PRIVATE bloxide_core)
-    add_test(NAME BloxideWorldTests COMMAND BloxideWorldTests)
-    add_test(NAME BloxideBenchmarkSmoke COMMAND BloxideBenchmark --quick)
-    add_test(NAME BloxideSeedReproducibility COMMAND ${CMAKE_COMMAND} "-DPROBE=$<TARGET_FILE:BloxideNoiseBenchmark>" -P "${CMAKE_SOURCE_DIR}/tests/Reproducibility.cmake")
-    set_tests_properties(BloxideSeedReproducibility PROPERTIES TIMEOUT 90)
-    add_test(NAME BloxideFieldsReproducibility COMMAND ${CMAKE_COMMAND} "-DPROBE=$<TARGET_FILE:BloxideNoiseBenchmark>" "-DEXTRA=--fields" -P "${CMAKE_SOURCE_DIR}/tests/Reproducibility.cmake")
-    set_tests_properties(BloxideFieldsReproducibility PROPERTIES TIMEOUT 90)
-    add_test(NAME BloxideDensityReproducibility COMMAND ${CMAKE_COMMAND} "-DPROBE=$<TARGET_FILE:BloxideNoiseBenchmark>" "-DEXTRA=--density" -P "${CMAKE_SOURCE_DIR}/tests/Reproducibility.cmake")
-    set_tests_properties(BloxideDensityReproducibility PROPERTIES TIMEOUT 120)
-    add_executable(BloxideRegressionTests tests/RegressionTests.cpp)
-    target_link_libraries(BloxideRegressionTests PRIVATE bloxide_core)
-    add_test(NAME BloxideRegressionTests COMMAND BloxideRegressionTests)
-    add_executable(BloxideV120Tests tests/V120Tests.cpp)
-    target_link_libraries(BloxideV120Tests PRIVATE bloxide_core)
-    add_test(NAME BloxideV120Tests COMMAND BloxideV120Tests)
-    add_executable(BloxideV125Tests tests/V125Tests.cpp)
-    target_link_libraries(BloxideV125Tests PRIVATE bloxide_core)
+    foreach(name World Regression V120 V125 V130 V135 V140Core Portability)
+        add_executable(Bloxide${name}Tests tests/${name}Tests.cpp)
+        target_link_libraries(Bloxide${name}Tests PRIVATE bloxide_core)
+        list(APPEND BLOXIDE_RUNTIME_TARGETS Bloxide${name}Tests)
+        if(MSVC)
+            target_compile_options(Bloxide${name}Tests PRIVATE /UNDEBUG)
+        else()
+            target_compile_options(Bloxide${name}Tests PRIVATE -UNDEBUG)
+        endif()
+        add_test(NAME Bloxide${name}Tests COMMAND Bloxide${name}Tests)
+        set_tests_properties(Bloxide${name}Tests PROPERTIES LABELS "headless" TIMEOUT 1200)
+    endforeach()
     target_compile_definitions(BloxideV125Tests PRIVATE BLOXIDE_ASSET_DIR="${CMAKE_SOURCE_DIR}/assets/textures")
-    add_test(NAME BloxideV125Tests COMMAND BloxideV125Tests)
-    add_executable(BloxideV130Tests tests/V130Tests.cpp)
-    add_executable(BloxideV135Tests tests/V135Tests.cpp)
-    add_executable(BloxideV140CoreTests tests/V140CoreTests.cpp)
-    target_link_libraries(BloxideV140CoreTests PRIVATE bloxide_core)
-    add_test(NAME BloxideV140CoreTests COMMAND BloxideV140CoreTests)
-    set_tests_properties(BloxideV140CoreTests PROPERTIES TIMEOUT 120)
-    target_link_libraries(BloxideV135Tests PRIVATE bloxide_core)
-    add_test(NAME BloxideV135Tests COMMAND BloxideV135Tests)
-    set_tests_properties(BloxideV135Tests PROPERTIES TIMEOUT 120)
-    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-        set_tests_properties(BloxideV135Tests PROPERTIES TIMEOUT 300)
-    endif()
-    target_link_libraries(BloxideV130Tests PRIVATE bloxide_core)
-    add_test(NAME BloxideV130Tests COMMAND BloxideV130Tests)
-    set_tests_properties(BloxideV130Tests PROPERTIES TIMEOUT 90)
-    set_tests_properties(BloxideV125Tests PROPERTIES TIMEOUT 90)
-    set_tests_properties(BloxideV120Tests PROPERTIES TIMEOUT 90)
-    set_tests_properties(BloxideRegressionTests PROPERTIES TIMEOUT 45)
+    add_test(NAME BloxideBenchmarkSmoke COMMAND BloxideBenchmark --quick)
+    set_tests_properties(BloxideBenchmarkSmoke PROPERTIES LABELS headless TIMEOUT 1200)
+    foreach(mode Seed Fields Density)
+        set(extra "")
+        if(mode STREQUAL "Fields")
+            set(extra --fields)
+        elseif(mode STREQUAL "Density")
+            set(extra --density)
+        endif()
+        add_test(NAME Bloxide${mode}Reproducibility COMMAND ${CMAKE_COMMAND}
+            "-DPROBE=$<TARGET_FILE:BloxideNoiseBenchmark>" "-DEXTRA=${extra}" -P "${CMAKE_SOURCE_DIR}/tests/Reproducibility.cmake")
+        set_tests_properties(Bloxide${mode}Reproducibility PROPERTIES LABELS headless TIMEOUT 1200)
+    endforeach()
     if(BLOXIDE_RENDER_TESTS)
-        add_test(NAME BloxideDensityRenderRegression COMMAND Bloxide --smoke-test --no-lod --world "${CMAKE_BINARY_DIR}/testing/density-gl" --preset mountainous --seed 130)
-        set_tests_properties(BloxideDensityRenderRegression PROPERTIES TIMEOUT 120)
-        set(BLOXIDE_TEST_FAR_RADIUS 24)
-        if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-            set(BLOXIDE_TEST_FAR_RADIUS 12)
-        endif()
-        add_test(NAME BloxideLodRenderRegression COMMAND Bloxide --smoke-test --require-lod --world "${CMAKE_BINARY_DIR}/testing/density-lod-gl" --far-radius ${BLOXIDE_TEST_FAR_RADIUS} --preset mountainous --seed 130)
-        set_tests_properties(BloxideLodRenderRegression PROPERTIES TIMEOUT 240)
-        if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-            set_tests_properties(BloxideLodRenderRegression PROPERTIES TIMEOUT 300)
-        endif()
-        add_test(NAME BloxideRenderRegression COMMAND Bloxide --smoke-test)
-        add_test(NAME BloxideFarRenderPositive COMMAND Bloxide --smoke-test --smoke-origin 1099511627648)
-        add_test(NAME BloxideFarRenderNegative COMMAND Bloxide --smoke-test --smoke-origin -1099511627648)
-        set_tests_properties(BloxideFarRenderPositive BloxideFarRenderNegative PROPERTIES TIMEOUT 90)
-        set_tests_properties(BloxideRenderRegression PROPERTIES TIMEOUT 90)
-    endif()
-    if(MSVC)
-        target_compile_options(BloxideWorldTests PRIVATE /UNDEBUG)
-    else()
-        target_compile_options(BloxideWorldTests PRIVATE -UNDEBUG)
+        foreach(case Density Lod Legacy Positive Negative)
+            set(args --smoke-test)
+            if(case STREQUAL "Density")
+                list(APPEND args --no-lod --preset mountainous)
+            elseif(case STREQUAL "Lod")
+                list(APPEND args --require-lod --preset mountainous --far-radius "$<IF:$<CONFIG:Debug>,12,24>")
+            elseif(case STREQUAL "Positive")
+                list(APPEND args --smoke-origin 1099511627648)
+            elseif(case STREQUAL "Negative")
+                list(APPEND args --smoke-origin -1099511627648)
+            endif()
+            add_test(NAME BloxideGpu${case} COMMAND Bloxide ${args} --seed 130
+                --world "${CMAKE_BINARY_DIR}/testing/${case}/world"
+                --diagnostics-dir "${CMAKE_BINARY_DIR}/testing/${case}/diagnostics")
+            set_tests_properties(BloxideGpu${case} PROPERTIES LABELS gpu TIMEOUT ${BLOXIDE_GPU_TIMEOUT}
+                RUN_SERIAL TRUE)
+        endforeach()
     endif()
 endif()
+if(WIN32)
+    set_property(GLOBAL APPEND PROPERTY JOB_POOLS runtime_link=1)
+    foreach(target IN LISTS BLOXIDE_EXECUTABLES BLOXIDE_RUNTIME_TARGETS)
+        set_property(TARGET ${target} PROPERTY JOB_POOL_LINK runtime_link)
+        add_custom_command(TARGET ${target} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} "-DEXECUTABLE=$<TARGET_FILE:${target}>"
+                "-DOUTPUT=$<TARGET_FILE_DIR:${target}>"
+                "-DRUNTIME_HINTS=$<TARGET_FILE_DIR:${BLOXIDE_SDL_TARGET}>;${compiler_runtime_dir}"
+                "-DOBJDUMP=${CMAKE_OBJDUMP}" -P "${CMAKE_SOURCE_DIR}/cmake/CopyWindowsRuntime.cmake"
+            VERBATIM)
+    endforeach()
+endif()
+include(cmake/Packaging.cmake)

@@ -134,15 +134,19 @@ std::uint32_t textureVariant(std::int64_t x, int y, std::int64_t z, unsigned bas
     return h & 3U;
 }
 TextureImage AssetLoader::loadTexture(const std::filesystem::path& file, RenderClass policy) {
-    auto fail = [&](const std::string& s) { throw std::runtime_error(file.string() + ": " + s); };
+    auto fail = [&](const std::string& s) { throw std::runtime_error(file.u8string() + ": " + s); };
     if (!std::filesystem::is_regular_file(file))
         fail("PNG file missing");
     if (std::filesystem::file_size(file) > 1024 * 1024)
         fail("PNG file too large");
     std::vector<unsigned char> bytes;
-    auto error = lodepng::load_file(bytes, file.string());
-    if (error)
-        fail(lodepng_error_text(error));
+    std::ifstream source(file, std::ios::binary);
+    if (!source)
+        fail("cannot open PNG");
+    bytes.assign(std::istreambuf_iterator<char>(source), {});
+    if (!source.eof() && source.fail())
+        fail("cannot read PNG");
+    unsigned error = 0;
     lodepng::State state;
     unsigned w = 0, h = 0;
     error = lodepng_inspect(&w, &h, &state, bytes.data(), bytes.size());
@@ -174,7 +178,7 @@ TextureAssets AssetLoader::load(const std::filesystem::path& root) {
     auto start = std::chrono::steady_clock::now();
     std::ifstream manifest(root / "manifest.txt");
     if (!manifest)
-        throw std::runtime_error((root / "manifest.txt").string() + ": missing manifest");
+        throw std::runtime_error((root / "manifest.txt").u8string() + ": missing manifest");
     std::string magic, version;
     unsigned schema = 0, w = 0, h = 0, count = 0;
     std::uint64_t seed = 0;
@@ -182,7 +186,7 @@ TextureAssets AssetLoader::load(const std::filesystem::path& root) {
         magic != "BLOXIDE_TEXTURES" || w != 32 || h != 32 ||
         !((schema == 1 && count == 20) || (schema == 2 && count == TextureLayers)) ||
         seed > std::numeric_limits<std::uint32_t>::max())
-        throw std::runtime_error((root / "manifest.txt").string() + ": invalid header");
+        throw std::runtime_error((root / "manifest.txt").u8string() + ": invalid header");
     TextureAssets assets;
     assets.seed = static_cast<std::uint32_t>(seed);
     assets.layerCount = count;
@@ -193,13 +197,13 @@ TextureAssets AssetLoader::load(const std::filesystem::path& root) {
         if (!(manifest >> layer >> group >> variant >> filename) || layer >= count || seen[layer] ||
             variant != layer % 4 || group != TextureGroups[layer / 4] ||
             filename != group + "_" + std::to_string(variant) + ".png")
-            throw std::runtime_error((root / "manifest.txt").string() +
+            throw std::runtime_error((root / "manifest.txt").u8string() +
                                      ": invalid/duplicate layer entry " + std::to_string(i));
         auto policy = textureRenderClass(layer / 4);
         if (schema == 2) {
             unsigned declared = 0;
             if (!(manifest >> declared) || declared != unsigned(policy))
-                throw std::runtime_error((root / "manifest.txt").string() +
+                throw std::runtime_error((root / "manifest.txt").u8string() +
                                          ": invalid render class");
         }
         seen[layer] = true;
@@ -208,7 +212,7 @@ TextureAssets AssetLoader::load(const std::filesystem::path& root) {
     }
     std::string extra;
     if (manifest >> extra)
-        throw std::runtime_error((root / "manifest.txt").string() + ": unexpected extra entries");
+        throw std::runtime_error((root / "manifest.txt").u8string() + ": unexpected extra entries");
     assets.loadMs =
         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
     return assets;

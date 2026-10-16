@@ -1,3 +1,5 @@
+#include <bloxide/BuildInfo.hpp>
+#include <bloxide/RuntimePaths.hpp>
 #include <bloxide/World.hpp>
 #include <algorithm>
 #include <chrono>
@@ -21,6 +23,14 @@ std::uint64_t chunkHash(const ChunkData& data, bool states = false) {
     return h;
 }
 int main(int argc, char** argv) {
+    if (bloxide::printVersionIfRequested(argc, argv))
+        return 0;
+    auto utf8Arguments = bloxide::platformArguments(argc, argv);
+    std::vector<char*> utf8Pointers;
+    for (auto& value : utf8Arguments)
+        utf8Pointers.push_back(value.data());
+    argc = int(utf8Pointers.size());
+    argv = utf8Pointers.data();
     try {
         bool probe = false, reverse = false, threads = false, golden = false, quick = false;
         WorldSettings settings;
@@ -88,8 +98,9 @@ int main(int argc, char** argv) {
             return 0;
         }
         using Clock = std::chrono::steady_clock;
-        std::filesystem::create_directories("build/benchmark");
-        std::ofstream out("build/benchmark/v1.3-noise.csv");
+        auto outputRoot = bloxide::diagnosticDirectory("legacy");
+        std::filesystem::create_directories(outputRoot);
+        std::ofstream out(outputRoot / "v1.3-noise.csv");
         out << "metric,value,unit\n";
         auto metric = [&](const char* name, double value, const char* unit) {
             out << name << ',' << value << ',' << unit << '\n';

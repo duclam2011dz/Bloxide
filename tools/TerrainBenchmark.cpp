@@ -1,3 +1,5 @@
+#include <bloxide/BuildInfo.hpp>
+#include <bloxide/RuntimePaths.hpp>
 #include <bloxide/World.hpp>
 #include <algorithm>
 #include <chrono>
@@ -12,6 +14,14 @@ double ms(Clock::time_point start) {
     return std::chrono::duration<double, std::milli>(Clock::now() - start).count();
 }
 int main(int argc, char** argv) {
+    if (bloxide::printVersionIfRequested(argc, argv))
+        return 0;
+    auto utf8Arguments = bloxide::platformArguments(argc, argv);
+    std::vector<char*> utf8Pointers;
+    for (auto& value : utf8Arguments)
+        utf8Pointers.push_back(value.data());
+    argc = int(utf8Pointers.size());
+    argv = utf8Pointers.data();
     try {
         bool quick = false;
         for (int i = 1; i < argc; ++i) {
@@ -20,9 +30,10 @@ int main(int argc, char** argv) {
             else
                 throw std::invalid_argument("usage: BloxideTerrainBenchmark [--quick]");
         }
-        std::filesystem::create_directories("build/benchmark");
-        std::ofstream csv("build/benchmark/v1.3.5-terrain.csv"),
-            json("build/benchmark/v1.3.5-summary.json");
+        auto outputRoot = bloxide::diagnosticDirectory("legacy");
+        std::filesystem::create_directories(outputRoot);
+        std::ofstream csv(outputRoot / "v1.3.5-terrain.csv"),
+            json(outputRoot / "v1.3.5-summary.json");
         csv << "metric,value,unit\n";
         json << "{\n";
         bool first = true;

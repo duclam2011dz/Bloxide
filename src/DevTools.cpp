@@ -1,3 +1,4 @@
+#include <bloxide/BuildInfo.hpp>
 #include <bloxide/DevTools.hpp>
 #include <bloxide/DensityWorld.hpp>
 #include <bloxide/Textures.hpp>
@@ -225,8 +226,9 @@ void DevTools::writerLoop() {
                 return times.empty() ? 0 : times[(times.size() - 1) * p / 100];
             };
             std::ofstream summary(base.string() + ".json");
-            summary << std::setprecision(17) << "{\"seed\":\"" << job.seed << "\",\"generator\":\""
-                    << job.version << "\",\"frames_available\":" << job.frames.size()
+            summary << std::setprecision(17) << "{\"build\":" << buildInfoJson() << ",\"seed\":\""
+                    << job.seed << "\",\"generator\":\"" << job.version
+                    << "\",\"frames_available\":" << job.frames.size()
                     << ",\"frames_seen\":" << job.framesSeen
                     << ",\"history_is_rolling\":true,\"trace_overwritten_events\":"
                     << job.overwritten << ",\"capture_complete\":"

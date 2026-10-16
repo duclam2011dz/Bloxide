@@ -1,3 +1,4 @@
+#include <bloxide/BuildInfo.hpp>
 #include <bloxide/Noise.hpp>
 #include <algorithm>
 #include <cmath>
@@ -30,6 +31,10 @@ void backend(NoiseBackend b) {
 bool noiseBackendSupported(NoiseBackend b) noexcept {
     if (b == NoiseBackend::Scalar || b == NoiseBackend::Auto)
         return true;
+    if (b == NoiseBackend::SSE2 && !BLOXIDE_HAS_SSE2)
+        return false;
+    if (b == NoiseBackend::AVX2 && !BLOXIDE_HAS_AVX2)
+        return false;
 #if defined(__GNUC__) && (defined(__x86_64__) || defined(__i386__))
     __builtin_cpu_init();
     return b == NoiseBackend::SSE2   ? __builtin_cpu_supports("sse2")
@@ -68,14 +73,18 @@ void SimplexNoise2D::sampleGrid2D(const NoiseGrid2D& g, double* out, std::size_t
     coordinate(g.x, g.dx, g.width);
     coordinate(g.z, g.dz, g.depth);
     backend(b);
+#if BLOXIDE_HAS_SSE2
     if (b == NoiseBackend::SSE2) {
         grid2DSse2(*this, g, out);
         return;
     }
+#endif
+#if BLOXIDE_HAS_AVX2
     if (b == NoiseBackend::AVX2) {
         grid2DAvx2(*this, g, out);
         return;
     }
+#endif
     for (std::size_t z = 0; z < g.depth; ++z)
         for (std::size_t x = 0; x < g.width; ++x)
             out[z * g.width + x] = sample(g.x + double(x) * g.dx, g.z + double(z) * g.dz);
@@ -89,14 +98,18 @@ void SimplexNoise3D::sampleGrid3D(const NoiseGrid3D& g, double* out, std::size_t
     coordinate(g.y, g.dy, g.height);
     coordinate(g.z, g.dz, g.depth);
     backend(b);
+#if BLOXIDE_HAS_SSE2
     if (b == NoiseBackend::SSE2) {
         grid3DSse2(*this, g, out);
         return;
     }
+#endif
+#if BLOXIDE_HAS_AVX2
     if (b == NoiseBackend::AVX2) {
         grid3DAvx2(*this, g, out);
         return;
     }
+#endif
     for (std::size_t y = 0; y < g.height; ++y)
         for (std::size_t z = 0; z < g.depth; ++z)
             for (std::size_t x = 0; x < g.width; ++x)
@@ -114,14 +127,18 @@ void SimplexNoise3D::samplePoints3D(const double* x, const double* y, const doub
         coordinate(y[i], 0, 1);
         coordinate(z[i], 0, 1);
     }
+#if BLOXIDE_HAS_SSE2
     if (b == NoiseBackend::SSE2) {
         points3DSse2(*this, x, y, z, count, out);
         return;
     }
+#endif
+#if BLOXIDE_HAS_AVX2
     if (b == NoiseBackend::AVX2) {
         points3DAvx2(*this, x, y, z, count, out);
         return;
     }
+#endif
     for (std::size_t i = 0; i < count; ++i)
         out[i] = sample(x[i], y[i], z[i]);
 }

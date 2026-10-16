@@ -13,7 +13,7 @@
 #include <bloxide/Trace.hpp>
 namespace bloxide {
 namespace {
-std::string readFile(const std::string& path) {
+std::string readFile(const std::filesystem::path& path) {
     std::ifstream f(path);
     std::stringstream s;
     s << f.rdbuf();
@@ -185,8 +185,8 @@ void Renderer::shutdown() {
     textures_ = 0;
     overlayVbo_ = overlayVao_ = program_ = overlayProgram_ = 0;
 }
-bool Renderer::initialize(const std::string& vp, const std::string& fp,
-                          const std::string& assetDir) {
+bool Renderer::initialize(const std::filesystem::path& vp, const std::filesystem::path& fp,
+                          const std::filesystem::path& assetDir) {
     owner_ = std::this_thread::get_id();
     TextureAssets assets;
     try {
@@ -237,14 +237,10 @@ bool Renderer::initialize(const std::string& vp, const std::string& fp,
     program_ = program(readFile(vp), readFile(fp));
     if (!program_)
         return false;
-    heightmapProgram_ =
-        program(readFile((std::filesystem::path(vp).parent_path() / "heightmap.vert").string()),
-                readFile(fp));
+    heightmapProgram_ = program(readFile(vp.parent_path() / "heightmap.vert"), readFile(fp));
     if (!heightmapProgram_)
         return false;
-    surfaceProgram_ =
-        program(readFile((std::filesystem::path(vp).parent_path() / "surface.vert").string()),
-                readFile(fp));
+    surfaceProgram_ = program(readFile(vp.parent_path() / "surface.vert"), readFile(fp));
     if (!surfaceProgram_)
         return false;
     glGenQueries(32, queries_.data());

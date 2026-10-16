@@ -1,3 +1,5 @@
+#include <bloxide/BuildInfo.hpp>
+#include <bloxide/RuntimePaths.hpp>
 #include <bloxide/World.hpp>
 #include <algorithm>
 #include <chrono>
@@ -7,11 +9,20 @@
 #include <thread>
 #include <vector>
 int main(int argc, char** argv) {
+    if (bloxide::printVersionIfRequested(argc, argv))
+        return 0;
+    auto utf8Arguments = bloxide::platformArguments(argc, argv);
+    std::vector<char*> utf8Pointers;
+    for (auto& value : utf8Arguments)
+        utf8Pointers.push_back(value.data());
+    argc = int(utf8Pointers.size());
+    argv = utf8Pointers.data();
     using Clock = std::chrono::steady_clock;
     bool quick = argc > 1 && std::string(argv[1]) == "--quick";
-    std::filesystem::create_directories("build/benchmark");
-    std::ofstream csv("build/benchmark/v1.2-streaming.csv");
-    std::ofstream trace("build/benchmark/v1.2-trace.json");
+    auto outputRoot = bloxide::diagnosticDirectory("legacy");
+    std::filesystem::create_directories(outputRoot);
+    std::ofstream csv(outputRoot / "v1.2-streaming.csv");
+    std::ofstream trace(outputRoot / "v1.2-trace.json");
     trace << "{\"traceEvents\":[";
     bool firstTrace = true;
     const auto epoch = Clock::now();
@@ -92,7 +103,7 @@ int main(int argc, char** argv) {
                          : v[std::min(v.size() - 1, static_cast<std::size_t>(q * (v.size() - 1)))];
     };
     auto s = world.stats();
-    std::ofstream json("build/benchmark/v1.2-summary.json");
+    std::ofstream json(outputRoot / "v1.2-summary.json");
     json << "{\"headless\":true,\"samples\":" << timings.size()
          << ",\"driver_p95_ms\":" << quantile(timings, 0.95)
          << ",\"driver_max_ms\":" << timings.back()

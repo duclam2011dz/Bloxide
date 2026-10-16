@@ -1,3 +1,5 @@
+#include <bloxide/BuildInfo.hpp>
+#include <bloxide/RuntimePaths.hpp>
 #include <bloxide/ChunkGenerator.hpp>
 #include <bloxide/Noise.hpp>
 #include <algorithm>
@@ -24,11 +26,19 @@ double median(std::vector<double> v) {
     return v.empty() ? 0 : v[v.size() / 2];
 }
 int main(int argc, char** argv) {
+    if (bloxide::printVersionIfRequested(argc, argv))
+        return 0;
+    auto utf8Arguments = bloxide::platformArguments(argc, argv);
+    std::vector<char*> utf8Pointers;
+    for (auto& value : utf8Arguments)
+        utf8Pointers.push_back(value.data());
+    argc = int(utf8Pointers.size());
+    argv = utf8Pointers.data();
     try {
         bool quick = false;
         unsigned repeat = 5;
         std::uint64_t seed = 130;
-        std::filesystem::path output = "build/benchmark/v1.4-noise";
+        std::filesystem::path output = bloxide::diagnosticDirectory("noise");
         for (int i = 1; i < argc; ++i) {
             std::string a = argv[i];
             if (a == "--help") {
@@ -45,7 +55,7 @@ int main(int argc, char** argv) {
                     throw std::invalid_argument("repeat 1..20");
                 repeat = unsigned(n);
             } else if (a == "--output" && i + 1 < argc)
-                output = argv[++i];
+                output = std::filesystem::u8path(argv[++i]);
             else
                 throw std::invalid_argument(
                     "NoiseLab [--quick] [--repeat N] [--seed uint64] [--output directory]");
@@ -54,8 +64,9 @@ int main(int argc, char** argv) {
         std::ofstream csv(output / "samples.csv"), json(output / "summary.json");
         csv << "backend,repeat,ns_per_sample_2d,samples_per_second_2d,ns_per_sample_3d,samples_per_"
                "second_3d,worldgen_p95_ms,worldgen_p99_ms\n";
-        json << "{\"seed\":\"" << seed << "\",\"compiler\":\"" << __VERSION__
-             << "\",\"build_type\":\"" << BLOXIDE_BENCHMARK_BUILD_TYPE
+        json << "{\"build\":" << bloxide::buildInfoJson() << ",\"seed\":\"" << seed
+             << "\",\"compiler\":\"" << BLOXIDE_COMPILER << "\",\"build_type\":\""
+             << BLOXIDE_BENCHMARK_BUILD_TYPE
              << "\",\"optimization\":" << BLOXIDE_BENCHMARK_OPT_LEVEL << ",\"backends\":[";
         auto settings = WorldSettings::densityWorld();
         settings.seed = seed;

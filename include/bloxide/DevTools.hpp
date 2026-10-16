@@ -3,7 +3,7 @@
 #include <bloxide/Renderer.hpp>
 #include <bloxide/Physics.hpp>
 #include <bloxide/Telemetry.hpp>
-#include <SDL2/SDL.h>
+#include <SDL.h>
 #include <deque>
 #include <filesystem>
 #include <optional>

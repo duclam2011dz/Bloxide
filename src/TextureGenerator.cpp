@@ -347,8 +347,12 @@ void TextureGenerator::writePng(const std::filesystem::path& file, const Texture
     state.info_raw.bitdepth = state.info_png.color.bitdepth = 8;
     std::vector<unsigned char> bytes;
     auto error = lodepng::encode(bytes, image.rgba, image.width, image.height, state);
-    if (!error)
-        error = lodepng::save_file(bytes, file.string());
+    if (!error) {
+        std::ofstream stream(file, std::ios::binary);
+        if (!stream || !stream.write(reinterpret_cast<const char*>(bytes.data()),
+                                     std::streamsize(bytes.size())))
+            throw std::runtime_error(file.u8string() + ": PNG write failed");
+    }
     if (error)
         throw std::runtime_error(file.string() + ": " + lodepng_error_text(error));
 }

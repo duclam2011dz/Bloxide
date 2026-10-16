@@ -1,6 +1,10 @@
 #include "bloxide/Renderer.hpp"
-#include <glad/glad.h>
-#include <SDL2/SDL.h>
+#include <bloxide/GameApplication.hpp>
+#include <bloxide/BuildInfo.hpp>
+#include <bloxide/RuntimePaths.hpp>
+#include <memory>
+#include <glad/gl.h>
+#include <SDL.h>
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -21,41 +25,36 @@
 #include <numeric>
 #include <iomanip>
 
-#ifndef BLOXIDE_SOURCE_DIR
-#define BLOXIDE_SOURCE_DIR "."
-#endif
-
 namespace bloxide {
-struct BenchmarkRun {
-    bool enabled = false, overlay = false;
-    double warmup = 5, duration = 30;
-    std::string scenario = "steady";
-    std::filesystem::path output;
-    NoiseBackend backend = NoiseBackend::Auto;
-    int farRadius = 24;
-};
-class Game {
+class GameApplication {
   public:
-    explicit Game(const WorldSettings& settings, std::int64_t smokeOffset = 0, bool lod = true,
-                  bool requireLod = false, const BenchmarkRun& benchmark = {})
-        : world_(settings, lod, benchmark.backend), requireLod_(requireLod), benchmark_(benchmark) {
+    explicit GameApplication(const WorldSettings& settings, std::int64_t smokeOffset = 0,
+                             bool lod = true, bool requireLod = false,
+                             const BenchmarkRun& benchmark = {})
+        : world_(std::make_unique<World>(settings, lod, benchmark.backend)),
+          requireLod_(requireLod), lodEnabled_(lod), benchmark_(benchmark) {
         auto p =
             WorldPosition::fromAbsolute(double(smokeOffset) + 8.5, 128, double(smokeOffset) + 8.5);
         player_.origin = p.chunk;
         player_.feet = p.local();
-        auto limits = world_.resourceLimits();
+        auto limits = world_->resourceLimits();
         limits.requestedFarRadius = benchmark.farRadius;
-        world_.setResourceLimits(limits);
+        world_->setResourceLimits(limits);
     }
     int run(bool smokeTest = false);
+    ~GameApplication() {
+        shutdown();
+    }
 
   private:
+    void shutdown() noexcept;
+    bool sdlInitialized_ = false, glLoaded_ = false;
     void event(const SDL_Event& e);
     void update(float dt);
     void interact(bool place);
     SDL_Window* window_ = nullptr;
     SDL_GLContext context_ = nullptr;
-    World world_;
+    std::unique_ptr<World> world_;
     Camera camera_;
     Renderer renderer_;
     DevTools devtools_;
@@ -67,6 +66,7 @@ class Game {
     PlayerPhysics player_;
     bool spawned_ = false;
     bool requireLod_ = false;
+    bool lodEnabled_ = true;
     BenchmarkRun benchmark_;
     bool jumpRequested_ = false;
     struct InteractionCommand {
@@ -77,86 +77,255 @@ class Game {
     BlockTarget presentedTarget_{};
 };
 
-int Game::run(bool smokeTest) {
+int GameApplication::run(bool smokeTest) {
+    SDL_SetMainReady();
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         std::cerr << SDL_GetError() << std::endl;
         return 1;
     }
+    sdlInitialized_ = true;
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+#ifdef __APPLE__
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
+#endif
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-    window_ = SDL_CreateWindow("Bloxide v1.4.0", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                               1280, 720,
+    window_ = SDL_CreateWindow(versionText().c_str(), SDL_WINDOWPOS_CENTERED,
+                               SDL_WINDOWPOS_CENTERED, 1280, 720,
                                SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE |
                                    (smokeTest || benchmark_.enabled ? SDL_WINDOW_HIDDEN : 0));
     if (!window_) {
         std::cerr << SDL_GetError() << std::endl;
-        SDL_Quit();
         return 1;
     }
     context_ = SDL_GL_CreateContext(window_);
-    if (!context_ || !gladLoadGLLoader(reinterpret_cast<GLADloadproc>(SDL_GL_GetProcAddress))) {
+    if (!context_ || !gladLoadGL(reinterpret_cast<GLADloadfunc>(SDL_GL_GetProcAddress))) {
         std::cerr << "OpenGL context/loader failed: " << SDL_GetError() << std::endl;
-        if (context_)
-            SDL_GL_DeleteContext(context_);
-        SDL_DestroyWindow(window_);
-        SDL_Quit();
+        return 1;
+    }
+    glLoaded_ = true;
+    if (!glActiveTexture)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glActiveTexture. Install a supported GPU driver.");
+    if (!glAttachShader)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glAttachShader. Install a supported GPU driver.");
+    if (!glBindBuffer)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glBindBuffer. Install a supported GPU driver.");
+    if (!glBindTexture)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glBindTexture. Install a supported GPU driver.");
+    if (!glBindVertexArray)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glBindVertexArray. Install a supported GPU driver.");
+    if (!glBlendFunc)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glBlendFunc. Install a supported GPU driver.");
+    if (!glBufferData)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glBufferData. Install a supported GPU driver.");
+    if (!glClear)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glClear. Install a supported GPU driver.");
+    if (!glClearColor)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glClearColor. Install a supported GPU driver.");
+    if (!glClientWaitSync)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glClientWaitSync. Install a supported GPU driver.");
+    if (!glCompileShader)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glCompileShader. Install a supported GPU driver.");
+    if (!glCreateProgram)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glCreateProgram. Install a supported GPU driver.");
+    if (!glCreateShader)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glCreateShader. Install a supported GPU driver.");
+    if (!glCullFace)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glCullFace. Install a supported GPU driver.");
+    if (!glDeleteBuffers)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glDeleteBuffers. Install a supported GPU driver.");
+    if (!glDeleteProgram)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glDeleteProgram. Install a supported GPU driver.");
+    if (!glDeleteQueries)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glDeleteQueries. Install a supported GPU driver.");
+    if (!glDeleteShader)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glDeleteShader. Install a supported GPU driver.");
+    if (!glDeleteSync)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glDeleteSync. Install a supported GPU driver.");
+    if (!glDeleteTextures)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glDeleteTextures. Install a supported GPU driver.");
+    if (!glDeleteVertexArrays)
+        throw std::runtime_error("Missing OpenGL 3.3 entry point: glDeleteVertexArrays. Install a "
+                                 "supported GPU driver.");
+    if (!glDepthFunc)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glDepthFunc. Install a supported GPU driver.");
+    if (!glDepthMask)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glDepthMask. Install a supported GPU driver.");
+    if (!glDisable)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glDisable. Install a supported GPU driver.");
+    if (!glDrawArrays)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glDrawArrays. Install a supported GPU driver.");
+    if (!glDrawElements)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glDrawElements. Install a supported GPU driver.");
+    if (!glEnable)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glEnable. Install a supported GPU driver.");
+    if (!glEnableVertexAttribArray)
+        throw std::runtime_error("Missing OpenGL 3.3 entry point: glEnableVertexAttribArray. "
+                                 "Install a supported GPU driver.");
+    if (!glFenceSync)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glFenceSync. Install a supported GPU driver.");
+    if (!glGenBuffers)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glGenBuffers. Install a supported GPU driver.");
+    if (!glGenQueries)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glGenQueries. Install a supported GPU driver.");
+    if (!glGenTextures)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glGenTextures. Install a supported GPU driver.");
+    if (!glGenVertexArrays)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glGenVertexArrays. Install a supported GPU driver.");
+    if (!glGenerateMipmap)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glGenerateMipmap. Install a supported GPU driver.");
+    if (!glGetError)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glGetError. Install a supported GPU driver.");
+    if (!glGetIntegerv)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glGetIntegerv. Install a supported GPU driver.");
+    if (!glGetProgramiv)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glGetProgramiv. Install a supported GPU driver.");
+    if (!glGetQueryObjectiv)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glGetQueryObjectiv. Install a supported GPU driver.");
+    if (!glGetQueryObjectui64v)
+        throw std::runtime_error("Missing OpenGL 3.3 entry point: glGetQueryObjectui64v. Install a "
+                                 "supported GPU driver.");
+    if (!glGetShaderiv)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glGetShaderiv. Install a supported GPU driver.");
+    if (!glGetTexImage)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glGetTexImage. Install a supported GPU driver.");
+    if (!glGetTexLevelParameteriv)
+        throw std::runtime_error("Missing OpenGL 3.3 entry point: glGetTexLevelParameteriv. "
+                                 "Install a supported GPU driver.");
+    if (!glGetUniformLocation)
+        throw std::runtime_error("Missing OpenGL 3.3 entry point: glGetUniformLocation. Install a "
+                                 "supported GPU driver.");
+    if (!glLinkProgram)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glLinkProgram. Install a supported GPU driver.");
+    if (!glQueryCounter)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glQueryCounter. Install a supported GPU driver.");
+    if (!glReadPixels)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glReadPixels. Install a supported GPU driver.");
+    if (!glShaderSource)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glShaderSource. Install a supported GPU driver.");
+    if (!glTexImage3D)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glTexImage3D. Install a supported GPU driver.");
+    if (!glTexParameteri)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glTexParameteri. Install a supported GPU driver.");
+    if (!glTexSubImage3D)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glTexSubImage3D. Install a supported GPU driver.");
+    if (!glUniform1f)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glUniform1f. Install a supported GPU driver.");
+    if (!glUniform1i)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glUniform1i. Install a supported GPU driver.");
+    if (!glUniform1ui)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glUniform1ui. Install a supported GPU driver.");
+    if (!glUniform2ui)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glUniform2ui. Install a supported GPU driver.");
+    if (!glUniform3f)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glUniform3f. Install a supported GPU driver.");
+    if (!glUniformMatrix4fv)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glUniformMatrix4fv. Install a supported GPU driver.");
+    if (!glUseProgram)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glUseProgram. Install a supported GPU driver.");
+    if (!glVertexAttribIPointer)
+        throw std::runtime_error("Missing OpenGL 3.3 entry point: glVertexAttribIPointer. Install "
+                                 "a supported GPU driver.");
+    if (!glVertexAttribPointer)
+        throw std::runtime_error("Missing OpenGL 3.3 entry point: glVertexAttribPointer. Install a "
+                                 "supported GPU driver.");
+    if (!glViewport)
+        throw std::runtime_error(
+            "Missing OpenGL 3.3 entry point: glViewport. Install a supported GPU driver.");
+    GLint major = 0, minor = 0, profile = 0, layers = 0;
+    glGetIntegerv(GL_MAJOR_VERSION, &major);
+    glGetIntegerv(GL_MINOR_VERSION, &minor);
+    glGetIntegerv(GL_CONTEXT_PROFILE_MASK, &profile);
+    glGetIntegerv(GL_MAX_ARRAY_TEXTURE_LAYERS, &layers);
+    if (major < 3 || (major == 3 && minor < 3) || !(profile & GL_CONTEXT_CORE_PROFILE_BIT) ||
+        layers < int(TextureLayers)) {
+        std::cerr << "Bloxide requires OpenGL 3.3 Core and " << TextureLayers
+                  << " texture layers; detected " << major << "." << minor << ", layers " << layers
+                  << ". Install the GPU vendor driver or a GL 3.3 Mesa driver.\n";
         return 1;
     }
     SDL_GL_SetSwapInterval(benchmark_.enabled ? 0 : 1);
     char* executableBase = SDL_GetBasePath();
     if (!executableBase) {
         std::cerr << SDL_GetError() << std::endl;
-        SDL_GL_DeleteContext(context_);
-        SDL_DestroyWindow(window_);
-        SDL_Quit();
         return 1;
     }
-    std::filesystem::path root(executableBase);
+    std::filesystem::path root = std::filesystem::u8path(executableBase);
     SDL_free(executableBase);
-    if (!renderer_.initialize((root / "shaders/voxel.vert").string(),
-                              (root / "shaders/voxel.frag").string(),
-                              (root / "assets/textures").string())) {
+    if (!renderer_.initialize(root / "shaders/voxel.vert", root / "shaders/voxel.frag",
+                              root / "assets/textures")) {
         std::cerr << "Renderer/assets initialization failed" << std::endl;
-        renderer_.shutdown();
-        SDL_GL_DeleteContext(context_);
-        SDL_DestroyWindow(window_);
-        SDL_Quit();
         return 1;
     }
     if (smokeTest && !renderer_.validateTexturesForTests()) {
         std::cerr << "Texture Array/mipmap validation failed" << std::endl;
-        renderer_.shutdown();
-        SDL_GL_DeleteContext(context_);
-        SDL_DestroyWindow(window_);
-        SDL_Quit();
         return 3;
     }
     if (smokeTest && !renderer_.validateHeightmapForTests()) {
         std::cerr << "Heightmap integer attributes/morph validation failed" << std::endl;
-        renderer_.shutdown();
-        SDL_GL_DeleteContext(context_);
-        SDL_DestroyWindow(window_);
-        SDL_Quit();
         return 3;
     }
     if (smokeTest && !renderer_.validateSurfaceForTests()) {
         std::cerr << "XYZ surface morph/depth validation failed" << std::endl;
-        renderer_.shutdown();
-        SDL_GL_DeleteContext(context_);
-        SDL_DestroyWindow(window_);
-        SDL_Quit();
         return 3;
     }
     if (!devtools_.initialize(window_, context_, root / "assets/textures",
                               benchmark_.enabled ? benchmark_.output / "captures"
-                                                 : root / "benchmark/devtools")) {
+                                                 : benchmark_.diagnostics / "devtools")) {
         std::cerr << "DevTools backend initialization failed" << std::endl;
-        renderer_.shutdown();
-        SDL_GL_DeleteContext(context_);
-        SDL_DestroyWindow(window_);
-        SDL_Quit();
         return 1;
     }
     SDL_SetRelativeMouseMode(smokeTest ? SDL_FALSE : SDL_TRUE);
@@ -184,9 +353,9 @@ int Game::run(bool smokeTest) {
         if (devtools_.interactive() || !captured_)
             throw std::runtime_error("DevTools did not restore capture");
         SDL_SetWindowSize(window_, 800, 600);
-        devtools_.draw(world_, renderer_, camera_, player_, {});
+        devtools_.draw(*world_, renderer_, camera_, player_, {});
         SDL_SetWindowSize(window_, 1280, 720);
-        devtools_.draw(world_, renderer_, camera_, player_, {});
+        devtools_.draw(*world_, renderer_, camera_, player_, {});
         key.key.keysym.sym = SDLK_F3;
         event(key);
         key.type = SDL_KEYUP;
@@ -220,11 +389,12 @@ int Game::run(bool smokeTest) {
     std::size_t outlinePixels = 0;
     double maxFrameMs = 0;
     std::uint64_t previous = SDL_GetPerformanceCounter();
-    auto profileDir = benchmark_.enabled ? benchmark_.output : root / "benchmark";
+    auto profileDir = benchmark_.enabled ? benchmark_.output : benchmark_.diagnostics;
     std::filesystem::create_directories(profileDir);
-    auto profileName = world_.settings().generatorVersion + "-" + world_.settings().preset + "-" +
-                       std::to_string(world_.settings().seed) + "-" + std::to_string(smokeChunk.x) +
-                       "-" + std::to_string(smokeChunk.z) + (requireLod_ ? "-lod-regression" : "");
+    auto profileName = world_->settings().generatorVersion + "-" + world_->settings().preset + "-" +
+                       std::to_string(world_->settings().seed) + "-" +
+                       std::to_string(smokeChunk.x) + "-" + std::to_string(smokeChunk.z) +
+                       (requireLod_ ? "-lod-regression" : "");
     std::ofstream frameCsv(profileDir / (profileName + "-runtime.csv"));
     frameCsv << "frame,frame_ms,world_driver_ms,upload_submit_ms,render_submit_ms,gpu_terrain_ms,"
                 "draws,near_ready,far_visible,generation_cpu_total_ms,meshing_cpu_total_ms,far_cpu_"
@@ -246,7 +416,7 @@ int Game::run(bool smokeTest) {
     double benchmarkX = 8.5, benchmarkZ = 8.5;
     if (benchmark_.enabled &&
         (benchmark_.scenario == "forest" || benchmark_.scenario == "village")) {
-        if (auto context = world_.generator().densityContext()) {
+        if (auto context = world_->generator().densityContext()) {
             if (benchmark_.scenario == "village") {
                 auto sites = context->villagesIn({-2048, 2048, -2048, 2048, 4, 247});
                 if (sites.empty())
@@ -331,9 +501,9 @@ int Game::run(bool smokeTest) {
                 priorityDirection[2] = float(priorityDirection[2] / length);
             }
         }
-        world_.updateAt(player_.worldEye(), priorityDirection);
+        world_->updateAt(player_.worldEye(), priorityDirection);
         if (benchmark_.enabled && benchmark_.scenario == "underwater" && !benchmarkFixture &&
-            world_.stats().ready >= 289) {
+            world_->stats().ready >= 289) {
             for (int y = 208; y <= 220; ++y)
                 for (int z = 3; z <= 13; ++z)
                     for (int x = 3; x <= 13; ++x) {
@@ -341,15 +511,15 @@ int Game::run(bool smokeTest) {
                             (y == 208 || y == 220 || x == 3 || x == 13 || z == 3 || z == 13)
                                 ? BlockState(BlockType::Glass)
                                 : BlockState::water();
-                        world_.setState(x, y, z, state);
+                        world_->setState(x, y, z, state);
                     }
             benchmarkFixture = true;
         }
         double worldMs =
             std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - worldStart)
                 .count();
-        renderer_.synchronize(world_.gpuCoords());
-        const auto pendingUploads = world_.takePendingUploads();
+        renderer_.synchronize(world_->gpuCoords());
+        const auto pendingUploads = world_->takePendingUploads();
         const auto uploadStart = std::chrono::steady_clock::now();
         devFrame.phaseStartUs[1] =
             std::chrono::duration<double, std::micro>(uploadStart.time_since_epoch()).count();
@@ -359,23 +529,23 @@ int Game::run(bool smokeTest) {
                     .count() >= 2.0)
                 break;
             if (renderer_.upload(upload))
-                world_.markUploaded(upload);
+                world_->markUploaded(upload);
         }
-        for (const auto& group : world_.readyGroups())
+        for (const auto& group : world_->readyGroups())
             if (renderer_.publish(group))
-                world_.commitGroup(group);
+                world_->commitGroup(group);
         double uploadMs = std::chrono::duration<double, std::milli>(
                               std::chrono::steady_clock::now() - uploadStart)
                               .count();
-        world_.reportGpuPressure(renderer_.budgetPressure() ? world_.resourceLimits().gpuBytes
-                                                            : renderer_.allocatedMeshBytes(),
-                                 dt);
+        world_->reportGpuPressure(renderer_.budgetPressure() ? world_->resourceLimits().gpuBytes
+                                                             : renderer_.allocatedMeshBytes(),
+                                  dt);
         if (!benchmark_.enabled)
             update(dt);
         auto fluidStart = std::chrono::steady_clock::now();
         devFrame.phaseStartUs[3] =
             std::chrono::duration<double, std::micro>(fluidStart.time_since_epoch()).count();
-        world_.advanceSimulation(simulationDt);
+        world_->advanceSimulation(simulationDt);
         devFrame.fluidMs =
             std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - fluidStart)
                 .count();
@@ -385,18 +555,18 @@ int Game::run(bool smokeTest) {
         }
         for (auto& command : commands_) {
             if (!captured_ ||
-                !world_.validateTargetAt(command.presented, player_.worldEye(), camera_.forward()))
+                !world_->validateTargetAt(command.presented, player_.worldEye(), camera_.forward()))
                 continue;
             presentedTarget_ = command.presented;
             interact(command.place);
         }
         commands_.clear();
         const auto target = spawned_ && captured_
-                                ? world_.targetAt(player_.worldEye(), camera_.forward())
+                                ? world_->targetAt(player_.worldEye(), camera_.forward())
                                 : BlockTarget{};
         int width = 0, height = 0;
-        SDL_GetWindowSize(window_, &width, &height);
-        const auto renderedChunks = world_.renderChunksAt(player_.worldEye(), camera_.forward());
+        SDL_GL_GetDrawableSize(window_, &width, &height);
+        const auto renderedChunks = world_->renderChunksAt(player_.worldEye(), camera_.forward());
         if (smokeTest && !renderer_.validatePublishedForTests(renderedChunks)) {
             std::cerr << "CPU/GPU mesh ownership mismatch during OpenGL regression" << std::endl;
             break;
@@ -408,10 +578,10 @@ int Game::run(bool smokeTest) {
             std::chrono::duration<double, std::micro>(renderStart.time_since_epoch()).count();
         auto eyePosition = player_.worldEye();
         int eyeY = int(std::floor(eyePosition.y));
-        auto eyeState = world_.getState(eyePosition.blockX(), eyeY, eyePosition.blockZ());
+        auto eyeState = world_->getState(eyePosition.blockX(), eyeY, eyePosition.blockZ());
         bool underwater = eyeState == BlockType::Water &&
                           eyePosition.y - eyeY <
-                              (world_.get(eyePosition.blockX(), eyeY + 1, eyePosition.blockZ()) ==
+                              (world_->get(eyePosition.blockX(), eyeY + 1, eyePosition.blockZ()) ==
                                        BlockType::Water
                                    ? 1
                                    : eyeState.waterHeight());
@@ -419,10 +589,10 @@ int Game::run(bool smokeTest) {
         double renderMs = std::chrono::duration<double, std::milli>(
                               std::chrono::steady_clock::now() - renderStart)
                               .count();
-        bool farReady = world_.expectedFarTiles() > 0 &&
-                        std::size_t(farCount) >= world_.expectedFarTiles() &&
-                        world_.heightmapSettled();
-        if (smokeTest && target.hit && !outlineChecked && world_.stats().ready >= 289 &&
+        bool farReady = world_->expectedFarTiles() > 0 &&
+                        std::size_t(farCount) >= world_->expectedFarTiles() &&
+                        world_->heightmapSettled();
+        if (smokeTest && target.hit && !outlineChecked && world_->stats().ready >= 289 &&
             (!requireLod_ || farReady)) {
             const auto blackPixels = [&]() {
                 std::vector<unsigned char> pixels(static_cast<std::size_t>(width * height * 3));
@@ -470,9 +640,9 @@ int Game::run(bool smokeTest) {
                     std::copy_n(raw.begin() + std::size_t(height - 1 - y) * width * 4, width * 4,
                                 image.rgba.begin() + std::size_t(y) * width * 4);
                 auto diagnostics =
-                    root / "diagnostics" /
-                    (world_.settings().generatorVersion + "-" + world_.settings().preset +
-                     "-seed-" + std::to_string(world_.settings().seed) + "-" +
+                    benchmark_.diagnostics / "images" /
+                    (world_->settings().generatorVersion + "-" + world_->settings().preset +
+                     "-seed-" + std::to_string(world_->settings().seed) + "-" +
                      std::to_string(smokeChunk.x) + "-" + std::to_string(smokeChunk.z));
                 std::filesystem::create_directories(diagnostics);
                 TextureGenerator::writePng(diagnostics / filename, image);
@@ -497,7 +667,7 @@ int Game::run(bool smokeTest) {
         presentedTarget_ = target;
         if (smokeTest) {
             if (smokeFrames % 300 == 0) {
-                auto s = world_.stats();
+                auto s = world_->stats();
                 std::cout << "smoke_frame=" << smokeFrames << " ready=" << s.ready
                           << " near_upload_pending=" << s.pendingUploads
                           << " far_upload_pending=" << s.farPendingUploads
@@ -519,7 +689,7 @@ int Game::run(bool smokeTest) {
                     break;
                 }
                 if (requireLod_ && !smokeEditing && outlineChecked && smokeTraversal < 6 &&
-                    farReady && world_.stats().ready == 289) {
+                    farReady && world_->stats().ready == 289) {
                     const int path[]{16, 32, 16, 0, -16, 0};
                     auto next = WorldPosition::fromAbsolute(
                         double(smokeChunk.x * 16 + path[smokeTraversal]) + 8.5, 128,
@@ -531,23 +701,23 @@ int Game::run(bool smokeTest) {
                     ++smokeTraversal;
                 }
                 if (!smokeEditing && spawned_ &&
-                    (!requireLod_ || (smokeTraversal == 6 && world_.heightmapSettled())) &&
-                    outlineChecked && terrainPixels > 1000 && world_.targetable(smokeX, smokeZ) &&
-                    world_.targetable(smokeX + 1, smokeZ)) {
-                    for (auto& c : world_.renderChunksAt(player_.worldEye(), camera_.forward()))
+                    (!requireLod_ || (smokeTraversal == 6 && world_->heightmapSettled())) &&
+                    outlineChecked && terrainPixels > 1000 && world_->targetable(smokeX, smokeZ) &&
+                    world_->targetable(smokeX + 1, smokeZ)) {
+                    for (auto& c : world_->renderChunksAt(player_.worldEye(), camera_.forward()))
                         if (c.coord == smokeChunk)
                             smokeRevision = c.mesh->revision;
-                    world_.setMeshDelayForTests(80);
-                    for (smokeY = 255; smokeY > 0 && !isSolid(world_.get(smokeX, smokeY, smokeZ));
+                    world_->setMeshDelayForTests(80);
+                    for (smokeY = 255; smokeY > 0 && !isSolid(world_->get(smokeX, smokeY, smokeZ));
                          --smokeY) {
                     }
-                    smokeMaterial = world_.get(smokeX, smokeY, smokeZ);
+                    smokeMaterial = world_->get(smokeX, smokeY, smokeZ);
                     renderer_.failNextUploadForTests(smokeChunk);
-                    smokeEditing = world_.set(smokeX, smokeY, smokeZ, BlockType::Air);
+                    smokeEditing = world_->set(smokeX, smokeY, smokeZ, BlockType::Air);
                     smokeEditCount = 1;
                 } else if (smokeEditing) {
                     bool visible = false;
-                    for (auto& c : world_.renderChunksAt(player_.worldEye(), camera_.forward()))
+                    for (auto& c : world_->renderChunksAt(player_.worldEye(), camera_.forward()))
                         if (c.coord == smokeChunk) {
                             visible = true;
                             if (c.mesh->revision == smokeRevision) {
@@ -561,17 +731,17 @@ int Game::run(bool smokeTest) {
                     }
                 }
                 if (smokeEditing && outlineChecked && phaseVisibleFrames > 0 &&
-                    world_.targetable(smokeX, smokeZ) && renderer_.retiredCount() == 0 &&
+                    world_->targetable(smokeX, smokeZ) && renderer_.retiredCount() == 0 &&
                     terrainPixels > 1000) {
                     if (smokeEditCount == 1) {
-                        breakPublishMs = world_.stats().lastPublishMs;
+                        breakPublishMs = world_->stats().lastPublishMs;
                         for (auto& c : renderedChunks)
                             if (c.coord == smokeChunk)
                                 smokeRevision = c.mesh->revision;
                         phaseVisibleFrames = 0;
                         smokeEditCount = 2;
                         renderer_.failNextUploadForTests(smokeChunk);
-                        if (!world_.set(smokeX, smokeY, smokeZ, smokeMaterial)) {
+                        if (!world_->set(smokeX, smokeY, smokeZ, smokeMaterial)) {
                             std::cerr << "Place regression edit failed" << std::endl;
                             break;
                         }
@@ -582,9 +752,9 @@ int Game::run(bool smokeTest) {
                                   << " feet_y=" << player_.feet[1]
                                   << " grounded=" << player_.grounded
                                   << " remesh_visible_frames=" << remeshFrames
-                                  << " edit_publish_ms=" << world_.stats().lastPublishMs
+                                  << " edit_publish_ms=" << world_->stats().lastPublishMs
                                   << " swaps=" << renderer_.swaps()
-                                  << " stale_results=" << world_.stats().staleResults << std::endl;
+                                  << " stale_results=" << world_->stats().staleResults << std::endl;
                         std::cout << "outline_pixels=" << outlinePixels
                                   << " max_frame_ms=" << maxFrameMs
                                   << " break_publish_ms=" << breakPublishMs
@@ -611,7 +781,7 @@ int Game::run(bool smokeTest) {
         auto uiStart = std::chrono::steady_clock::now();
         devFrame.phaseStartUs[4] =
             std::chrono::duration<double, std::micro>(uiStart.time_since_epoch()).count();
-        devtools_.draw(world_, renderer_, camera_, player_, target);
+        devtools_.draw(*world_, renderer_, camera_, player_, target);
         renderer_.finishFrame();
         devFrame.uiMs =
             std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - uiStart)
@@ -628,7 +798,7 @@ int Game::run(bool smokeTest) {
             for (int y = 0; y < height; ++y)
                 std::copy_n(raw.begin() + std::size_t(height - 1 - y) * width * 4, width * 4,
                             shot.rgba.begin() + std::size_t(y) * width * 4);
-            auto output = root / "benchmark/devtools";
+            auto output = benchmark_.diagnostics / "devtools";
             std::filesystem::create_directories(output);
             TextureGenerator::writePng(output / ("shot-" + std::to_string(totalFrames) + ".png"),
                                        shot);
@@ -650,7 +820,7 @@ int Game::run(bool smokeTest) {
         if (benchmark_.enabled) {
             auto tick = std::chrono::steady_clock::now();
             if (!benchmarkReady && (benchmark_.scenario == "cold" ||
-                                    (world_.stats().ready >= 289 && world_.heightmapSettled())))
+                                    (world_->stats().ready >= 289 && world_->heightmapSettled())))
                 benchmarkReady = tick;
             if (benchmarkReady && !benchmarkSample &&
                 std::chrono::duration<double>(tick - *benchmarkReady).count() >= benchmark_.warmup)
@@ -664,28 +834,28 @@ int Game::run(bool smokeTest) {
                 if (benchmark_.scenario == "fluid" && !benchmarkFixture) {
                     for (int z = 3; z <= 12; ++z)
                         for (int x = 3; x <= 12; ++x)
-                            world_.set(x, 96, z, BlockType::Stone);
-                    world_.setState(5, 102, 6, BlockState::water());
-                    world_.setState(7, 102, 6, BlockState::water());
+                            world_->set(x, 96, z, BlockType::Stone);
+                    world_->setState(5, 102, 6, BlockState::water());
+                    world_->setState(7, 102, 6, BlockState::water());
                     benchmarkFixture = true;
                 }
                 if (benchmark_.scenario == "edit" && totalFrames % 20 == 0) {
-                    int y = world_.surfaceHeight(8, 8);
-                    auto block = world_.get(8, y, 8);
-                    world_.set(8, y, 8,
-                               block == BlockType::Air ? BlockType::Grass : BlockType::Air);
+                    int y = world_->surfaceHeight(8, 8);
+                    auto block = world_->get(8, y, 8);
+                    world_->set(8, y, 8,
+                                block == BlockType::Air ? BlockType::Grass : BlockType::Air);
                 }
                 if (benchmark_.scenario == "budget") {
-                    auto limits = world_.resourceLimits();
+                    auto limits = world_->resourceLimits();
                     bool pressure = time < benchmark_.duration / 2;
                     limits.cpuBytes = (pressure ? 192 : 512) * MiB;
                     limits.gpuBytes = (pressure ? 32 : 128) * MiB;
                     limits.requestedFarRadius = 24;
-                    world_.setResourceLimits(limits);
+                    world_->setResourceLimits(limits);
                     renderer_.setMeshBudget(limits.gpuBytes);
                 }
                 if (time >= benchmark_.duration) {
-                    devtools_.exportCapture(world_, renderer_);
+                    devtools_.exportCapture(*world_, renderer_);
                     if (width > 0 && height > 0 && width <= 8192 && height <= 8192 &&
                         std::size_t(width) * std::size_t(height) <= 8 * MiB) {
                         const std::size_t bytes = std::size_t(width) * std::size_t(height) * 4;
@@ -713,8 +883,8 @@ int Game::run(bool smokeTest) {
         if (measuredFrames.size() > 32768)
             measuredFrames.pop_front();
         ++totalFrames;
-        auto metrics = world_.stats();
-        auto fluidMetrics = world_.fluidStats();
+        auto metrics = world_->stats();
+        auto fluidMetrics = world_->fluidStats();
         auto hardware = devtools_.hardware();
         frameCsv << totalFrames << ',' << measuredMs << ',' << worldMs << ',' << uploadMs << ','
                  << renderMs << ',' << renderer_.gpuTerrainMs() << ',' << renderer_.drawCalls()
@@ -727,7 +897,7 @@ int Game::run(bool smokeTest) {
                  << ',' << metrics.meshingQueue << ',' << metrics.uploadStaging << ','
                  << metrics.cpuCacheBytes << ',' << metrics.cpuReservations << ','
                  << renderer_.allocatedMeshBytes() << ',' << metrics.journalPayloadBytes << ','
-                 << world_.effectiveFarRadius() << ',' << metrics.swaps << ','
+                 << world_->effectiveFarRadius() << ',' << metrics.swaps << ','
                  << metrics.staleResults << ',' << fluidMetrics.ticks << ','
                  << fluidMetrics.frontier << ','
                  << metrics.blockCounts[unsigned(BlockType::IronOre)] << ','
@@ -742,20 +912,30 @@ int Game::run(bool smokeTest) {
                                          1000.0 / SDL_GetPerformanceFrequency());
     }
     if (benchmark_.enabled) {
-        world_.settings().save(profileDir / "world-config.meta");
+        world_->settings().save(profileDir / "world-config.meta");
         std::sort(benchmarkFrames.begin(), benchmarkFrames.end());
         auto hw = devtools_.hardware();
-        auto stats = world_.stats();
+        auto stats = world_->stats();
         auto percentile = [&](unsigned p) {
             return benchmarkFrames.empty()
                        ? 0
                        : benchmarkFrames[(benchmarkFrames.size() - 1) * p / 100];
         };
+        std::ifstream configInput(profileDir / "world-config.meta", std::ios::binary);
+        std::string configText((std::istreambuf_iterator<char>(configInput)), {});
+        configText.erase(std::remove(configText.begin(), configText.end(), '\r'), configText.end());
+        auto configId = textFingerprint(configText);
+        auto pose = camera_.position();
+        auto origin = camera_.origin();
+        auto direction = camera_.orientation();
+        int actualWidth = 0, actualHeight = 0;
+        SDL_GL_GetDrawableSize(window_, &actualWidth, &actualHeight);
         std::ofstream report(profileDir / "runtime-summary.json");
-        report << std::setprecision(17) << "{\"scenario\":\"" << benchmark_.scenario
-               << "\",\"seed\":\"" << world_.settings().seed << "\",\"generator\":\""
-               << world_.settings().generatorVersion << "\",\"noise_backend\":\""
-               << noiseBackendName(benchmark_.backend) << "\",\"frames\":" << benchmarkSamples
+        report << std::setprecision(17) << "{\"build\":" << buildInfoJson() << ",\"scenario\":\""
+               << benchmark_.scenario << "\",\"seed\":\"" << world_->settings().seed
+               << "\",\"generator\":\"" << world_->settings().generatorVersion
+               << "\",\"noise_backend\":\"" << noiseBackendName(benchmark_.backend)
+               << "\",\"frames\":" << benchmarkSamples
                << ",\"retained_frames\":" << benchmarkFrames.size()
                << ",\"frame_samples_dropped\":" << (benchmarkSamples - benchmarkFrames.size())
                << ",\"fps\":"
@@ -773,7 +953,7 @@ int Game::run(bool smokeTest) {
                << ",\"cpu_payload_bytes\":" << stats.cpuCacheBytes
                << ",\"working_set_bytes\":" << hw.workingSet
                << ",\"private_commit_bytes\":" << hw.privateCommit
-               << ",\"effective_far_radius\":" << world_.effectiveFarRadius()
+               << ",\"effective_far_radius\":" << world_->effectiveFarRadius()
                << ",\"gpu_engine_available\":" << (hw.gpuEngineAvailable ? "true" : "false")
                << ",\"gpu_memory_available\":" << (hw.gpuMemoryAvailable ? "true" : "false")
                << ",\"cpu\":" << std::quoted(hw.cpuName) << ",\"logical_cpus\":" << hw.logicalCpus
@@ -787,12 +967,25 @@ int Game::run(bool smokeTest) {
                << ",\"system_cpu_available\":" << (hw.systemCpuAvailable ? "true" : "false")
                << ",\"ram_available\":" << (hw.ramAvailable ? "true" : "false")
                << ",\"driver_gpu_local_usage_bytes\":" << hw.gpuLocalUsage
-               << ",\"gpu_engine_source\":" << std::quoted(hw.gpuEngineSource) << "}\n";
+               << ",\"gpu_engine_source\":" << std::quoted(hw.gpuEngineSource)
+               << ",\"worldgen_config_fingerprint\":" << std::quoted(configId)
+               << ",\"resolution\":[" << actualWidth << "," << actualHeight << "]"
+               << ",\"camera_world\":[" << double(origin.x) * 16 + pose[0] << "," << pose[1] << ","
+               << double(origin.z) * 16 + pose[2] << "]"
+               << ",\"camera_yaw_pitch\":[" << direction[0] << "," << direction[1] << "]"
+               << ",\"lod_enabled\":" << (lodEnabled_ ? "true" : "false")
+               << ",\"requested_far_radius\":" << benchmark_.farRadius
+               << ",\"overlay\":" << (benchmark_.overlay ? "true" : "false")
+               << ",\"warmup_seconds\":" << benchmark_.warmup
+               << ",\"sample_seconds\":" << benchmark_.duration
+               << ",\"cpu_budget_bytes\":" << world_->resourceLimits().cpuBytes
+               << ",\"gpu_budget_bytes\":" << world_->resourceLimits().gpuBytes << "}\n";
     }
     if (!measuredFrames.empty()) {
         std::sort(measuredFrames.begin(), measuredFrames.end());
         std::ofstream summary(profileDir / (profileName + "-summary.json"));
-        summary << "{\"diagnostic_run\": " << (smokeTest ? "true" : "false")
+        summary << "{\"build\":" << buildInfoJson()
+                << ",\"diagnostic_run\": " << (smokeTest ? "true" : "false")
                 << ", \"frames\": " << measuredFrames.size()
                 << ", \"p50_ms\": " << measuredFrames[(measuredFrames.size() - 1) * 50 / 100]
                 << ", \"p95_ms\": " << measuredFrames[(measuredFrames.size() - 1) * 95 / 100]
@@ -800,15 +993,10 @@ int Game::run(bool smokeTest) {
                 << ", \"gpu_terrain_last_ms\": " << renderer_.gpuTerrainMs() << "}\n";
     }
     SDL_SetRelativeMouseMode(SDL_FALSE);
-    devtools_.shutdown();
-    renderer_.shutdown();
-    SDL_GL_DeleteContext(context_);
-    SDL_DestroyWindow(window_);
-    SDL_Quit();
     return (smokeTest && !smokePassed) || (benchmark_.enabled && benchmarkFrames.empty()) ? 2 : 0;
 }
 
-void Game::event(const SDL_Event& e) {
+void GameApplication::event(const SDL_Event& e) {
     devtools_.processEvent(e);
     if (e.type == SDL_QUIT)
         running_ = false;
@@ -868,10 +1056,10 @@ void Game::event(const SDL_Event& e) {
     }
 }
 
-void Game::update(float dt) {
+void GameApplication::update(float dt) {
     if (!spawned_) {
         const auto x = player_.worldFeet().blockX(), z = player_.worldFeet().blockZ();
-        if (!world_.columnLoaded(x, z))
+        if (!world_->columnLoaded(x, z))
             return;
         auto original = player_;
         for (int radius = 0; radius <= 16 && !spawned_; ++radius)
@@ -881,24 +1069,24 @@ void Game::update(float dt) {
                         continue;
                     auto wx = x + dx, wz = z + dz;
                     if (wx < -WorldLimit || wx >= WorldLimit || wz < -WorldLimit ||
-                        wz >= WorldLimit || !world_.columnLoaded(wx, wz))
+                        wz >= WorldLimit || !world_->columnLoaded(wx, wz))
                         continue;
                     for (int y = ChunkData::Height - 3; y >= 0; --y) {
-                        if (!isSolid(world_.get(wx, y, wz)) ||
-                            world_.get(wx, y + 1, wz) == BlockType::Water ||
-                            world_.get(wx, y + 2, wz) == BlockType::Water)
+                        if (!isSolid(world_->get(wx, y, wz)) ||
+                            world_->get(wx, y + 1, wz) == BlockType::Water ||
+                            world_->get(wx, y + 2, wz) == BlockType::Water)
                             continue;
                         auto p =
                             WorldPosition::fromAbsolute(double(wx) + 0.5, y + 1, double(wz) + 0.5);
                         player_.origin = p.chunk;
                         player_.feet = p.local();
                         if (!player_.clear([this](std::int64_t x, int y, std::int64_t z) {
-                                return !world_.columnLoaded(x, z) || isSolid(world_.get(x, y, z));
+                                return !world_->columnLoaded(x, z) || isSolid(world_->get(x, y, z));
                             }))
                             continue;
                         if (player_.submergedFraction(
                                 [this](std::int64_t x, int y, std::int64_t z) {
-                                    return world_.getState(x, y, z);
+                                    return world_->getState(x, y, z);
                                 }) > 0)
                             continue;
                         player_.grounded = true;
@@ -910,11 +1098,11 @@ void Game::update(float dt) {
         if (!spawned_) {
             player_ = original;
             for (int y = ChunkData::Height - 3; y > 0; --y)
-                if (world_.get(x, y, z) == BlockType::Water &&
-                    world_.get(x, y + 1, z) == BlockType::Air) {
-                    player_.feet[1] = y + world_.getState(x, y, z).waterHeight() - 0.4;
+                if (world_->get(x, y, z) == BlockType::Water &&
+                    world_->get(x, y + 1, z) == BlockType::Air) {
+                    player_.feet[1] = y + world_->getState(x, y, z).waterHeight() - 0.4;
                     if (player_.clear([this](std::int64_t x, int y, std::int64_t z) {
-                            return !world_.columnLoaded(x, z) || isSolid(world_.get(x, y, z));
+                            return !world_->columnLoaded(x, z) || isSolid(world_->get(x, y, z));
                         })) {
                         player_.grounded = false;
                         player_.velocity = {};
@@ -961,16 +1149,16 @@ void Game::update(float dt) {
         dt, move[0], move[2], jumping,
         [this](std::int64_t x, int y, std::int64_t z) {
             // Unknown chunks are barriers until their collision data arrives.
-            return !world_.columnLoaded(x, z) || isSolid(world_.get(x, y, z));
+            return !world_->columnLoaded(x, z) || isSolid(world_->get(x, y, z));
         },
-        [this](std::int64_t x, int y, std::int64_t z) { return world_.get(x, y, z); },
-        [this](std::int64_t x, int y, std::int64_t z) { return world_.getState(x, y, z); },
+        [this](std::int64_t x, int y, std::int64_t z) { return world_->get(x, y, z); },
+        [this](std::int64_t x, int y, std::int64_t z) { return world_->getState(x, y, z); },
         captured_ && keys[SDL_SCANCODE_LCTRL]);
     jumpRequested_ = false;
     camera_.setPosition(player_.eye());
     camera_.setOrigin(player_.origin);
     if (hudEnabled_) {
-        const auto stats = world_.stats();
+        const auto stats = world_->stats();
         std::ostringstream title;
         title << "Bloxide DevTools | loaded " << stats.loaded << " draws " << renderer_.drawCalls()
               << " feet Y " << player_.feet[1] << " grounded " << player_.grounded << " swaps "
@@ -979,11 +1167,11 @@ void Game::update(float dt) {
     }
 }
 
-void Game::interact(bool place) {
+void GameApplication::interact(bool place) {
     if (!spawned_)
         return;
     const auto& hit = presentedTarget_;
-    if (!world_.validateTargetAt(hit, player_.worldEye(), camera_.forward()))
+    if (!world_->validateTargetAt(hit, player_.worldEye(), camera_.forward()))
         return;
     if (!place && !isBreakable(hit.type))
         return;
@@ -994,147 +1182,34 @@ void Game::interact(bool place) {
     if (place && isSolid(devtools_.selectedBlock()) &&
         player_.overlapsBlock(target.x, target.y, target.z))
         return;
-    if (place && (!world_.targetable(target.x, target.z) ||
-                  !isReplaceable(world_.get(target.x, target.y, target.z)) || target.y <= 0 ||
+    if (place && (!world_->targetable(target.x, target.z) ||
+                  !isReplaceable(world_->get(target.x, target.y, target.z)) || target.y <= 0 ||
                   target.y >= 256))
         return;
-    world_.set(target.x, target.y, target.z, place ? devtools_.selectedBlock() : BlockType::Air);
+    world_->set(target.x, target.y, target.z, place ? devtools_.selectedBlock() : BlockType::Air);
 }
-} // namespace bloxide
-
-int main(int argc, char** argv) {
-    try {
-        bool smoke = false, lod = true, requireLod = false;
-        std::optional<std::uint64_t> seed;
-        std::filesystem::path worldDir;
-        bloxide::BenchmarkRun benchmark;
-        std::optional<std::string> preset;
-        std::optional<bool> caves;
-        std::int64_t offset = 0;
-        for (int i = 1; i < argc; ++i) {
-            std::string arg = argv[i];
-            if (arg == "--help") {
-                std::cout << "Bloxide [--world folder] [--seed uint64-decimal] [--preset "
-                             "flat|rolling-hills|mountainous] [--caves on|off] [--no-lod]\nDefault "
-                             "world: SDL user data directory/worlds/default\nOnly seed/config "
-                             "metadata is persisted; block edits remain in RAM.\n";
-                return 0;
-            }
-            if (arg == "--smoke-test")
-                smoke = true;
-            else if (arg == "--seed" && i + 1 < argc)
-                seed = bloxide::WorldSettings::parseSeed(argv[++i]);
-            else if (arg == "--world" && i + 1 < argc)
-                worldDir = argv[++i];
-            else if (arg == "--preset" && i + 1 < argc)
-                preset = argv[++i];
-            else if (arg == "--caves" && i + 1 < argc) {
-                std::string v = argv[++i];
-                if (v != "on" && v != "off")
-                    throw std::invalid_argument("--caves requires on|off");
-                caves = v == "on";
-            } else if (arg == "--no-lod")
-                lod = false;
-            else if (arg == "--far-radius" && i + 1 < argc) {
-                auto value = std::string(argv[++i]);
-                std::size_t used = 0;
-                benchmark.farRadius = std::stoi(value, &used);
-                if (used != value.size() || benchmark.farRadius < 8 || benchmark.farRadius > 24)
-                    throw std::invalid_argument("far-radius 8..24");
-            } else if (arg == "--require-lod")
-                requireLod = true;
-            else if (arg == "--benchmark-run")
-                benchmark.enabled = true;
-            else if ((arg == "--warmup" || arg == "--duration") && i + 1 < argc) {
-                std::string value = argv[++i];
-                std::size_t used = 0;
-                double n = std::stod(value, &used);
-                if (used != value.size() || !std::isfinite(n) || n < 0 || n > 600 ||
-                    (arg == "--duration" && n <= 0))
-                    throw std::invalid_argument("invalid benchmark time");
-                if (arg == "--warmup")
-                    benchmark.warmup = n;
-                else
-                    benchmark.duration = n;
-            } else if (arg == "--scenario" && i + 1 < argc) {
-                benchmark.scenario = argv[++i];
-                if (benchmark.scenario != "steady" && benchmark.scenario != "traversal" &&
-                    benchmark.scenario != "reversal" && benchmark.scenario != "fluid" &&
-                    benchmark.scenario != "edit" && benchmark.scenario != "budget" &&
-                    benchmark.scenario != "cold" && benchmark.scenario != "forest" &&
-                    benchmark.scenario != "village" && benchmark.scenario != "underwater")
-                    throw std::invalid_argument("invalid benchmark scenario");
-            } else if (arg == "--benchmark-output" && i + 1 < argc)
-                benchmark.output = argv[++i];
-            else if (arg == "--benchmark-devtools" && i + 1 < argc) {
-                std::string v = argv[++i];
-                if (v != "on" && v != "off")
-                    throw std::invalid_argument("benchmark-devtools on|off");
-                benchmark.overlay = v == "on";
-            } else if (arg == "--noise-backend" && i + 1 < argc) {
-                std::string v = argv[++i];
-                if (v == "scalar")
-                    benchmark.backend = bloxide::NoiseBackend::Scalar;
-                else if (v == "sse2")
-                    benchmark.backend = bloxide::NoiseBackend::SSE2;
-                else if (v == "avx2")
-                    benchmark.backend = bloxide::NoiseBackend::AVX2;
-                else if (v == "auto")
-                    benchmark.backend = bloxide::NoiseBackend::Auto;
-                else
-                    throw std::invalid_argument("invalid noise backend");
-            } else if (arg == "--smoke-origin" && i + 1 < argc) {
-                std::string v = argv[++i];
-                std::size_t used = 0;
-                offset = std::stoll(v, &used);
-                if (used != v.size())
-                    throw std::invalid_argument("invalid smoke origin");
-            } else
-                throw std::invalid_argument(
-                    "usage: Bloxide [--world folder] [--seed uint64] [--smoke-test]");
-        }
-        if (offset && !smoke)
-            throw std::invalid_argument("--smoke-origin is test-only");
-        if (benchmark.enabled && smoke)
-            throw std::invalid_argument("benchmark and smoke modes are separate");
-        if (!benchmark.enabled && benchmark.backend != bloxide::NoiseBackend::Auto)
-            throw std::invalid_argument("explicit experimental noise backend is benchmark-only");
-        if (benchmark.enabled) {
-            char* base = SDL_GetBasePath();
-            if (!base)
-                throw std::runtime_error(SDL_GetError());
-            auto root = std::filesystem::path(base);
-            SDL_free(base);
-            auto id = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
-            if (benchmark.output.empty())
-                benchmark.output = root / "benchmark" / ("runtime-" + id);
-            if (worldDir.empty())
-                worldDir = root / "testing" / ("benchmark-world-" + id);
-            if (!seed)
-                seed = 130;
-        }
-        if (requireLod && (!smoke || !lod))
-            throw std::invalid_argument("--require-lod requires --smoke-test and enabled LOD");
-        if (worldDir.empty()) {
-            char* path = smoke ? SDL_GetBasePath() : SDL_GetPrefPath("Bloxide", "Bloxide");
-            if (!path)
-                throw std::runtime_error(SDL_GetError());
-            worldDir =
-                std::filesystem::path(path) /
-                (smoke ? "testing/smoke-world-" + preset.value_or("legacy") + "-" +
-                             std::to_string(offset) + "-" + std::to_string(seed.value_or(130))
-                       : "worlds/default");
-            SDL_free(path);
-            if (smoke && !seed)
-                seed = 130;
-        }
-        auto settings = bloxide::WorldSettings::open(worldDir, seed, preset, caves);
-        std::cout << "world_seed=" << settings.seed << " generator=" << settings.generatorVersion
-                  << " metadata=" << (worldDir / "world.meta").string() << std::endl;
-        bloxide::Game game(settings, offset, lod, requireLod, benchmark);
-        return game.run(smoke);
-    } catch (const std::exception& e) {
-        std::cerr << e.what() << std::endl;
-        return 1;
+void GameApplication::shutdown() noexcept {
+    world_.reset(); // joins workers before context/resource destruction
+    devtools_.shutdown();
+    if (context_ && glLoaded_)
+        renderer_.shutdown();
+    if (context_) {
+        SDL_GL_DeleteContext(context_);
+        context_ = nullptr;
+    }
+    if (window_) {
+        SDL_DestroyWindow(window_);
+        window_ = nullptr;
+    }
+    if (sdlInitialized_) {
+        SDL_Quit();
+        sdlInitialized_ = false;
     }
 }
+int runGameApplication(const WorldSettings& settings, const ApplicationOptions& options) {
+    GameApplication game(settings, options.offset, options.lod, options.requireLod,
+                         options.benchmark);
+    return game.run(options.smoke);
+}
+
+} // namespace bloxide

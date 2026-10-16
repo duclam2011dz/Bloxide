@@ -1,0 +1,20 @@
+cmake_minimum_required(VERSION 3.25)
+if(POLICY CMP0207)
+    cmake_policy(SET CMP0207 NEW)
+endif()
+set(CMAKE_GET_RUNTIME_DEPENDENCIES_PLATFORM windows+pe)
+if(OBJDUMP)
+    set(CMAKE_GET_RUNTIME_DEPENDENCIES_TOOL objdump)
+    set(CMAKE_GET_RUNTIME_DEPENDENCIES_COMMAND "${OBJDUMP}")
+endif()
+file(GET_RUNTIME_DEPENDENCIES EXECUTABLES "${EXECUTABLE}" DIRECTORIES ${RUNTIME_HINTS}
+    RESOLVED_DEPENDENCIES_VAR runtime UNRESOLVED_DEPENDENCIES_VAR missing
+    PRE_EXCLUDE_REGEXES "api-ms-.*" "ext-ms-.*"
+    POST_EXCLUDE_REGEXES "^[Cc]:[/\\\\][Ww][Ii][Nn][Dd][Oo][Ww][Ss][/\\\\].*")
+if(missing)
+    message(FATAL_ERROR "Unresolved runtime dependencies for ${EXECUTABLE}: ${missing}")
+endif()
+foreach(dependency IN LISTS runtime)
+    get_filename_component(name "${dependency}" NAME)
+    file(COPY_FILE "${dependency}" "${OUTPUT}/${name}" ONLY_IF_DIFFERENT)
+endforeach()

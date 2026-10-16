@@ -1,15 +1,25 @@
+#include <bloxide/BuildInfo.hpp>
+#include <bloxide/RuntimePaths.hpp>
 #include <bloxide/Textures.hpp>
 #include <chrono>
 #include <iostream>
 #include <limits>
 int main(int argc, char** argv) {
+    if (bloxide::printVersionIfRequested(argc, argv))
+        return 0;
+    auto utf8Arguments = bloxide::platformArguments(argc, argv);
+    std::vector<char*> utf8Pointers;
+    for (auto& value : utf8Arguments)
+        utf8Pointers.push_back(value.data());
+    argc = int(utf8Pointers.size());
+    argv = utf8Pointers.data();
     try {
         std::filesystem::path output = "assets/textures";
         std::uint32_t seed = 125;
         for (int i = 1; i < argc; ++i) {
             std::string arg = argv[i];
             if (arg == "--output" && i + 1 < argc)
-                output = argv[++i];
+                output = std::filesystem::u8path(argv[++i]);
             else if (arg == "--seed" && i + 1 < argc) {
                 std::string value = argv[++i];
                 std::size_t used = 0;

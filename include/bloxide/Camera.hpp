@@ -22,6 +22,9 @@ class Camera {
     }
     void move(const std::array<float, 3>& delta) noexcept;
     void rotate(float yawDelta, float pitchDelta) noexcept;
+    std::array<float, 2> orientation() const noexcept {
+        return {yaw_, pitch_};
+    }
     void setOrigin(ChunkCoord origin) noexcept {
         origin_ = origin;
     }

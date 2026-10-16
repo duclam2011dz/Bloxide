@@ -1,7 +1,7 @@
 #pragma once
 #include <bloxide/Camera.hpp>
 #include <bloxide/World.hpp>
-#include <glad/glad.h>
+#include <glad/gl.h>
 #include <unordered_map>
 #include <thread>
 #include <string>
@@ -12,8 +12,9 @@ class Renderer {
     ~Renderer();
     Renderer(const Renderer&) = delete;
     Renderer& operator=(const Renderer&) = delete;
-    bool initialize(const std::string& vertexShaderPath, const std::string& fragmentShaderPath,
-                    const std::string& assetsDirectory);
+    bool initialize(const std::filesystem::path& vertexShaderPath,
+                    const std::filesystem::path& fragmentShaderPath,
+                    const std::filesystem::path& assetsDirectory);
     bool validateTexturesForTests() const;
     bool validateHeightmapForTests() const;
     bool validateSurfaceForTests() const;
@@ -124,7 +125,7 @@ class Renderer {
     double gpuTerrainMs_ = 0;
     std::uint32_t textureSeed_ = 125;
     double textureLoadMs_ = 0, textureUploadMs_ = 0;
-    std::string assetsDirectory_;
+    std::filesystem::path assetsDirectory_;
     std::unordered_map<ChunkCoord, GpuMesh, ChunkCoordHash> meshes_, pending_;
     std::vector<Retired> retired_;
     std::thread::id owner_;
