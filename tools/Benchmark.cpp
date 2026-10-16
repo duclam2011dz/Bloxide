@@ -53,7 +53,8 @@ int main(int argc, char** argv) {
             << ',' << s.lastPublishMs << '\n';
         return s;
     };
-    auto deadline = Clock::now() + std::chrono::seconds(quick ? 10 : 30);
+    auto deadline =
+        Clock::now() + std::chrono::seconds((quick ? 10 : 30) * BLOXIDE_TEST_TIMEOUT_SCALE);
     int frames = 0;
     while (Clock::now() < deadline) {
         auto s = tick("cold", frames++);
@@ -75,7 +76,7 @@ int main(int argc, char** argv) {
         }
         if (std::string(scenario) == "edit") {
             int x = static_cast<int>(pos[0]), z = static_cast<int>(pos[2]);
-            deadline = Clock::now() + std::chrono::seconds(15);
+            deadline = Clock::now() + std::chrono::seconds(15 * BLOXIDE_TEST_TIMEOUT_SCALE);
             while (!world.targetable(x, z) && Clock::now() < deadline) {
                 tick("settle", 0);
                 std::this_thread::sleep_for(std::chrono::milliseconds(2));
@@ -85,7 +86,7 @@ int main(int argc, char** argv) {
                 if (!world.set(x, h, z,
                                edit % 2 ? bloxide::BlockType::Grass : bloxide::BlockType::Air))
                     return 2;
-                deadline = Clock::now() + std::chrono::seconds(15);
+                deadline = Clock::now() + std::chrono::seconds(15 * BLOXIDE_TEST_TIMEOUT_SCALE);
                 while (!world.targetable(x, z) && Clock::now() < deadline) {
                     tick("edit_wait", edit);
                     std::this_thread::sleep_for(std::chrono::milliseconds(2));

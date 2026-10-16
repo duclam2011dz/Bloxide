@@ -550,7 +550,10 @@ int GameApplication::run(bool smokeTest) {
             std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - fluidStart)
                 .count();
         if (smokeTest && spawned_ && !smokeAimed) {
-            camera_.rotate(0, -35);
+            // Aim at the supporting column, not terrain several blocks beyond it:
+            // steep generated slopes differ between determinism profiles and can
+            // otherwise leave this fixture's ray outside the six-block reach.
+            camera_.rotate(0, -75);
             smokeAimed = true;
         }
         for (auto& command : commands_) {
@@ -673,7 +676,10 @@ int GameApplication::run(bool smokeTest) {
                           << " far_upload_pending=" << s.farPendingUploads
                           << " far_group_ready=" << s.farGroupReady
                           << " groups=" << s.publicationGroups << " far_jobs=" << s.heightmapJobs
-                          << " far_stale=" << s.heightmapStale << std::endl;
+                          << " far_stale=" << s.heightmapStale << " spawned=" << spawned_
+                          << " target=" << target.hit << " feet_y=" << player_.feet[1]
+                          << " captured=" << captured_ << " outline=" << outlineChecked
+                          << std::endl;
             }
             if (spawned_ && renderer_.drawCalls() > 0) {
                 std::vector<unsigned char> pixels(static_cast<std::size_t>(width * height * 3));

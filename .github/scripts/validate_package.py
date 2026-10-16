@@ -18,7 +18,8 @@ with tempfile.TemporaryDirectory(prefix="bloxide-package-") as temporary:
     work = Path(temporary)
     extract = work / "relocated space-việt"
     shutil.unpack_archive(str(args.archive.resolve()), str(extract))
-    candidates = list(extract.rglob("Bloxide.exe" if os.name == "nt" else "Bloxide"))
+    candidates = [p for p in extract.rglob("Bloxide.exe" if os.name == "nt" else "Bloxide")
+                  if p.is_file()]
     if len(candidates) != 1:
         raise RuntimeError("Package must contain exactly one game binary")
     game = candidates[0]

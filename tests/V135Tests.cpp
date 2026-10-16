@@ -181,9 +181,9 @@ void metadata() {
 }
 void stream() {
 #ifdef NDEBUG
-    constexpr int waitSeconds = 45;
+    constexpr int waitSeconds = 45 * BLOXIDE_TEST_TIMEOUT_SCALE;
 #else
-    constexpr int waitSeconds = 180;
+    constexpr int waitSeconds = 180 * BLOXIDE_TEST_TIMEOUT_SCALE;
 #endif
     auto s = WorldSettings::terrainFields("flat");
     World world(s, true);

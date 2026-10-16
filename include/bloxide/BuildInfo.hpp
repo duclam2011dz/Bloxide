@@ -19,6 +19,7 @@ inline std::string buildInfoJson() {
         << ",\"sanitizer\":" << std::quoted(BLOXIDE_SANITIZER)
         << ",\"sse2_compiled\":" << (BLOXIDE_HAS_SSE2 ? "true" : "false")
         << ",\"avx2_compiled\":" << (BLOXIDE_HAS_AVX2 ? "true" : "false")
+        << ",\"dependency_provider\":" << std::quoted(BLOXIDE_DEPENDENCY_PROVIDER)
         << ",\"dependency_baseline\":" << std::quoted(BLOXIDE_DEPENDENCY_BASELINE)
         << ",\"determinism_profile\":"
         << std::quoted(std::string(BLOXIDE_PLATFORM) + "/" + BLOXIDE_COMPILER + "/strict") << "}";

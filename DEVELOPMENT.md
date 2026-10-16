@@ -4,7 +4,7 @@
 
 - Common: Git, CMake >=3.25, Ninja, C++17, network access for the first dependency build.
 - Windows MSVC: VS 2022 C++ build tools + Windows SDK, x64 developer shell; static CRT/SDL2.
-- Windows GCC: MSYS2 UCRT64 GCC/Ninja; dynamic SDL2 plus compiler runtimes. Do not mix MINGW64,
+- Windows GCC: MSYS2 UCRT64 GCC/Ninja/pkgconf; dynamic SDL2 plus compiler runtimes. Do not mix MINGW64,
   UCRT64, MSVC runtime libraries or compiler binaries from a different shell.
 - Ubuntu baseline: GCC 12 or Clang 15; X11/XWayland. Use the OS's GL implementation/driver.
 - macOS ARM64: Xcode command-line tools, Ninja, CMake; experimental scalar-only profile.
@@ -31,6 +31,9 @@ Bootstrap the pinned vcpkg checkout exactly as in README. Set VCPKG_ROOT in the 
 Linux examples use cmake --preset linux-gcc -DCMAKE_C_COMPILER=gcc-12 -DCMAKE_CXX_COMPILER=g++-12;
 use linux-clang with clang-15/clang++-15 for the CI-matched Clang profile.
 Clean-cache builds must work; caches are an optimization, not a required SDK.
+For MinGW, set PKG_CONFIG to the absolute native pkg-config.exe from the selected UCRT64 tools.
+The project triplet passes this host metadata checker through to vcpkg, avoiding a mandatory
+download from a particular MSYS2 mirror; SDL2 itself still comes from the pinned port/hash.
 
 ## Presets and outputs
 
@@ -93,3 +96,11 @@ required locally; Ubuntu runs relocated GPU smoke under Mesa.
 
 World metadata persists; edits/fluid journals do not. Existing metadata is never rewritten merely
 because the executable/toolchain changes. New OS telemetry can be N/A without failing startup.
+# Sanitizer deadlines
+
+TSan executes the same headless workloads and assertions with 10x internal
+streaming deadlines to account for instrumentation overhead (the original 10 s
+benchmark and 180 s LOD readiness limits expired on CI). This does not alter
+production simulation or performance thresholds; race detection remains enabled
+without project suppressions. CTest has a separate bounded outer timeout.
+

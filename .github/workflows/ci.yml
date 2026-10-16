@@ -56,10 +56,12 @@ jobs:
         with:
           msystem: UCRT64
           path-type: inherit
-          install: mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-cmake
+          install: mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-pkgconf
       - if: matrix.compiler == 'mingw'
         shell: pwsh
-        run: '"${{ steps.msys.outputs.msys2-location }}\ucrt64\bin" | Out-File -FilePath $env:GITHUB_PATH -Append'
+        run: |
+          "${{ steps.msys.outputs.msys2-location }}\ucrt64\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+          "PKG_CONFIG=${{ steps.msys.outputs.msys2-location }}\ucrt64\bin\pkg-config.exe" | Out-File -FilePath $env:GITHUB_ENV -Append
       - if: runner.os == 'Linux'
         run: |
           sudo apt-get update
