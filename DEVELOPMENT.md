@@ -53,6 +53,8 @@ Use asan-ubsan and tsan presets separately on Linux with Clang. Run ctest --pres
 Sanitizers diagnose correctness, not performance. TSan on kernels with wider randomized mappings
 may require vm.mmap_rnd_bits=28 in the disposable test runner; CI applies this OS compatibility
 setting, not a race suppression. Never disable reports to obtain a green build.
+The allocation-free sampling test uses TSan's public allocator hook instead of overriding its
+strong new/delete interceptors; a positive allocation control proves that the hook is active.
 
 Set BLOXIDE_RENDER_TESTS=ON for the five driver-backed regressions. GPU tests are labeled gpu,
 headless tests headless. Run GPU tests sequentially. Mesa/Xvfb CI allows up to 30 minutes/test;

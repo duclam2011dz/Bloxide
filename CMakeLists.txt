@@ -87,7 +87,7 @@ target_include_directories(bloxide_build INTERFACE include "${CMAKE_BINARY_DIR}/
 if(MSVC)
     set(release_flag /O2)
     set(actual_level 2)
-    target_compile_options(bloxide_build INTERFACE "$<$<COMPILE_LANGUAGE:CXX>:/fp:strict;/W4;/permissive->")
+    target_compile_options(bloxide_build INTERFACE "$<$<COMPILE_LANGUAGE:CXX>:/fp:strict;/utf-8;/W4;/permissive->")
 else()
     set(release_flag "-O${BLOXIDE_OPT_LEVEL}")
     set(actual_level "${BLOXIDE_OPT_LEVEL}")

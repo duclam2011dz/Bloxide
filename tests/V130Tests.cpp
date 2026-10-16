@@ -15,6 +15,7 @@
 using namespace bloxide;
 std::atomic<bool> countAllocations{false};
 std::atomic<std::size_t> allocations{0};
+void* volatile allocationProbe = nullptr;
 #ifndef __has_feature
 #define __has_feature(x) 0
 #endif
@@ -205,6 +206,12 @@ void noise() {
     require(FractalNoise::sample2D(n2, single, 123, -71) ==
                 n2.sample(123 * single.frequency, -71 * single.frequency),
             "zero gain uses first octave");
+    allocations = 0;
+    countAllocations = true;
+    allocationProbe = ::operator new(32);
+    ::operator delete(allocationProbe);
+    countAllocations = false;
+    require(allocations > 0, "allocation counter hook is inactive");
     allocations = 0;
     countAllocations = true;
     volatile double sink = 0;
