@@ -1,0 +1,46 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {"major": 3, "minor": 25, "patch": 0},
+  "configurePresets": [
+    {"name": "base", "hidden": true, "generator": "Ninja", "binaryDir": "${sourceDir}/out/${presetName}",
+      "cacheVariables": {"CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+        "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/cmake/triplets", "BUILD_TESTING": "ON"}},
+    {"name": "debug", "inherits": "base", "cacheVariables": {"CMAKE_BUILD_TYPE": "Debug"}},
+    {"name": "release-o2", "inherits": "base", "cacheVariables": {"CMAKE_BUILD_TYPE": "Release", "BLOXIDE_OPT_LEVEL": "2"}},
+    {"name": "release-o3", "inherits": "base", "cacheVariables": {"CMAKE_BUILD_TYPE": "Release", "BLOXIDE_OPT_LEVEL": "3"}},
+    {"name": "asan-ubsan", "inherits": "debug", "cacheVariables": {"CMAKE_C_COMPILER": "clang", "CMAKE_CXX_COMPILER": "clang++", "BLOXIDE_SANITIZER": "address-undefined", "VCPKG_TARGET_TRIPLET": "x64-bloxide-linux"}},
+    {"name": "tsan", "inherits": "debug", "cacheVariables": {"CMAKE_C_COMPILER": "clang", "CMAKE_CXX_COMPILER": "clang++", "BLOXIDE_SANITIZER": "thread", "VCPKG_TARGET_TRIPLET": "x64-bloxide-linux"}},
+    {"name": "linux-gcc", "inherits": "release-o3", "cacheVariables": {"CMAKE_C_COMPILER": "gcc", "CMAKE_CXX_COMPILER": "g++", "VCPKG_TARGET_TRIPLET": "x64-bloxide-linux"}},
+    {"name": "linux-clang", "inherits": "release-o3", "cacheVariables": {"CMAKE_C_COMPILER": "clang", "CMAKE_CXX_COMPILER": "clang++", "VCPKG_TARGET_TRIPLET": "x64-bloxide-linux"}},
+    {"name": "windows-msvc", "inherits": "release-o3", "cacheVariables": {"CMAKE_C_COMPILER": "cl", "CMAKE_CXX_COMPILER": "cl", "VCPKG_TARGET_TRIPLET": "x64-windows-static", "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded$<$<CONFIG:Debug>:Debug>"}},
+    {"name": "windows-gcc", "inherits": "release-o3", "cacheVariables": {"CMAKE_C_COMPILER": "gcc", "CMAKE_CXX_COMPILER": "g++", "VCPKG_TARGET_TRIPLET": "x64-mingw-dynamic", "VCPKG_HOST_TRIPLET": "x64-mingw-dynamic"}},
+    {"name": "macos-arm64", "inherits": "release-o3", "cacheVariables": {"VCPKG_TARGET_TRIPLET": "arm64-osx", "BLOXIDE_ENABLE_SIMD": "OFF"}},
+    {"name": "scalar-only", "inherits": "release-o3", "cacheVariables": {"BLOXIDE_ENABLE_SIMD": "OFF"}}
+  ],
+  "buildPresets": [
+    {"name": "debug", "configurePreset": "debug"},
+    {"name": "release-o2", "configurePreset": "release-o2"},
+    {"name": "release-o3", "configurePreset": "release-o3"},
+    {"name": "asan-ubsan", "configurePreset": "asan-ubsan"},
+    {"name": "tsan", "configurePreset": "tsan"},
+    {"name": "linux-gcc", "configurePreset": "linux-gcc"},
+    {"name": "linux-clang", "configurePreset": "linux-clang"},
+    {"name": "windows-msvc", "configurePreset": "windows-msvc"},
+    {"name": "windows-gcc", "configurePreset": "windows-gcc"},
+    {"name": "macos-arm64", "configurePreset": "macos-arm64"},
+    {"name": "scalar-only", "configurePreset": "scalar-only"}
+  ],
+  "testPresets": [
+    {"name": "debug", "configurePreset": "debug", "filter": {"include": {"label": "headless"}}, "output": {"outputOnFailure": true}},
+    {"name": "release-o2", "configurePreset": "release-o2", "filter": {"include": {"label": "headless"}}, "output": {"outputOnFailure": true}},
+    {"name": "release-o3", "configurePreset": "release-o3", "filter": {"include": {"label": "headless"}}, "output": {"outputOnFailure": true}},
+    {"name": "asan-ubsan", "configurePreset": "asan-ubsan", "filter": {"include": {"label": "headless"}}, "output": {"outputOnFailure": true}},
+    {"name": "tsan", "configurePreset": "tsan", "filter": {"include": {"label": "headless"}}, "output": {"outputOnFailure": true}},
+    {"name": "windows-gcc", "configurePreset": "windows-gcc", "filter": {"include": {"label": "headless"}}, "output": {"outputOnFailure": true}},
+    {"name": "windows-msvc", "configurePreset": "windows-msvc", "filter": {"include": {"label": "headless"}}, "output": {"outputOnFailure": true}},
+    {"name": "linux-gcc", "configurePreset": "linux-gcc", "filter": {"include": {"label": "headless"}}, "output": {"outputOnFailure": true}},
+    {"name": "linux-clang", "configurePreset": "linux-clang", "filter": {"include": {"label": "headless"}}, "output": {"outputOnFailure": true}},
+    {"name": "macos-arm64", "configurePreset": "macos-arm64", "filter": {"include": {"label": "headless"}}, "output": {"outputOnFailure": true}},
+    {"name": "scalar-only", "configurePreset": "scalar-only", "filter": {"include": {"label": "headless"}}, "output": {"outputOnFailure": true}}
+  ]
+}

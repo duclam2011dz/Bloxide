@@ -1,0 +1,11 @@
+{
+  "name": "bloxide",
+  "version-string": "1.5.0",
+  "license": "MIT",
+  "builtin-baseline": "a077941aaf7e15e2ac228f5052a1d9a65179ff63",
+  "dependencies": [
+    {"name": "sdl2", "default-features": false, "platform": "!linux"},
+    {"name": "sdl2", "default-features": false, "features": ["x11"], "platform": "linux"}
+  ],
+  "overrides": [{"name": "sdl2", "version": "2.32.10", "port-version": 1}]
+}

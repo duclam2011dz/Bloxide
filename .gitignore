@@ -4,6 +4,10 @@ build-cmake/
 build-tools/
 worlds/
 testing/
+out/
+_CPack_Packages/
+CMakeUserPresets.json
+vcpkg_installed/
 
 # IDE/editor files
 .vscode/

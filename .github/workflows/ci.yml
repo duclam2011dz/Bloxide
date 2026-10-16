@@ -1,0 +1,208 @@
+name: Portability
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: portability-${{ github.ref }}
+  cancel-in-progress: true
+env:
+  VCPKG_ROOT: ${{ github.workspace }}/build-tools/vcpkg
+  VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/build-tools/vcpkg-cache,readwrite
+jobs:
+  format:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - run: pip install clang-format==18.1.8
+      - run: python .github/scripts/check_format.py
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: windows-2022, compiler: msvc, config: Debug, opt: 3}
+          - {os: windows-2022, compiler: msvc, config: Release, opt: 3}
+          - {os: windows-2022, compiler: mingw, config: Debug, opt: 3}
+          - {os: windows-2022, compiler: mingw, config: Release, opt: 3}
+          - {os: windows-2022, compiler: mingw, config: Release, opt: 2}
+          - {os: ubuntu-22.04, compiler: gcc, config: Debug, opt: 3}
+          - {os: ubuntu-22.04, compiler: gcc, config: Release, opt: 3}
+          - {os: ubuntu-22.04, compiler: gcc, config: Release, opt: 2}
+          - {os: ubuntu-22.04, compiler: clang, config: Debug, opt: 3}
+          - {os: ubuntu-22.04, compiler: clang, config: Release, opt: 3}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: microsoft/vcpkg
+          ref: a077941aaf7e15e2ac228f5052a1d9a65179ff63
+          path: build-tools/vcpkg
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756
+        if: matrix.compiler == 'msvc'
+      - uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e
+        id: msys
+        if: matrix.compiler == 'mingw'
+        with:
+          msystem: UCRT64
+          path-type: inherit
+          install: mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-cmake
+      - if: matrix.compiler == 'mingw'
+        shell: pwsh
+        run: '"${{ steps.msys.outputs.msys2-location }}\ucrt64\bin" | Out-File -FilePath $env:GITHUB_PATH -Append'
+      - if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build g++-12 clang-15 pkg-config libgl1-mesa-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxinerama-dev libxfixes-dev libxrender-dev libxss-dev libxxf86vm-dev patchelf
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: build-tools/vcpkg-cache
+          key: vcpkg-${{ runner.os }}-${{ runner.arch }}-${{ matrix.compiler }}-${{ matrix.config }}-${{ matrix.opt }}-${{ hashFiles('vcpkg.json', 'cmake/triplets/*') }}
+      - name: Bootstrap dependencies
+        shell: pwsh
+        if: runner.os == 'Windows'
+        run: |
+          New-Item -ItemType Directory -Force build-tools/vcpkg-cache | Out-Null
+          & "$env:VCPKG_ROOT/bootstrap-vcpkg.bat" -disableMetrics
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - if: runner.os == 'Linux'
+        run: |
+          mkdir -p build-tools/vcpkg-cache
+          "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
+      - name: Configure
+        shell: pwsh
+        if: runner.os == 'Windows'
+        run: |
+          $preset = if ('${{ matrix.compiler }}' -eq 'msvc') {'windows-msvc'} else {'windows-gcc'}
+          cmake --preset $preset -B out/ci -DCMAKE_BUILD_TYPE=${{ matrix.config }} -DBLOXIDE_OPT_LEVEL=${{ matrix.opt }}
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - if: runner.os == 'Linux'
+        run: |
+          if [ "${{ matrix.compiler }}" = gcc ]; then cc=gcc-12; cxx=g++-12; else cc=clang-15; cxx=clang++-15; fi
+          cmake --preset linux-${{ matrix.compiler }} -B out/ci -DCMAKE_C_COMPILER="$cc" -DCMAKE_CXX_COMPILER="$cxx" -DCMAKE_BUILD_TYPE=${{ matrix.config }} -DBLOXIDE_OPT_LEVEL=${{ matrix.opt }}
+      - run: cmake --build out/ci --parallel 3
+      - run: ctest --test-dir out/ci -L headless --output-on-failure --parallel 1
+      - name: Package
+        if: matrix.config == 'Release' && matrix.opt == 3 && matrix.compiler != 'clang'
+        run: cpack --config out/ci/CPackConfig.cmake -B out/ci/packages
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: matrix.config == 'Release' && matrix.opt == 3 && matrix.compiler != 'clang'
+        with:
+          name: package-${{ matrix.compiler }}
+          path: |
+            out/ci/packages/*.zip
+            out/ci/packages/*.zip.sha256
+            out/ci/packages/*.tar.gz
+            out/ci/packages/*.tar.gz.sha256
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: tests-${{ matrix.os }}-${{ matrix.compiler }}-${{ matrix.config }}-O${{ matrix.opt }}
+          path: out/ci/Testing/Temporary/
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        with:
+          path: build-tools/vcpkg-cache
+          key: vcpkg-${{ runner.os }}-${{ runner.arch }}-${{ matrix.compiler }}-${{ matrix.config }}-${{ matrix.opt }}-${{ hashFiles('vcpkg.json', 'cmake/triplets/*') }}
+  linux-analysis:
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [asan-ubsan, tsan, mesa]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: microsoft/vcpkg
+          ref: a077941aaf7e15e2ac228f5052a1d9a65179ff63
+          path: build-tools/vcpkg
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-15 ninja-build pkg-config libgl1-mesa-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxinerama-dev libxfixes-dev libxrender-dev libxss-dev libxxf86vm-dev xvfb mesa-utils patchelf
+          "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
+      - name: Configure
+        run: |
+          if [ "${{ matrix.mode }}" = mesa ]; then
+            cmake --preset linux-clang -B out/analysis -DCMAKE_C_COMPILER=clang-15 -DCMAKE_CXX_COMPILER=clang++-15 -DBLOXIDE_RENDER_TESTS=ON
+          else
+            cmake --preset ${{ matrix.mode }} -B out/analysis -DCMAKE_C_COMPILER=clang-15 -DCMAKE_CXX_COMPILER=clang++-15
+          fi
+      - run: cmake --build out/analysis --parallel 3
+      - if: matrix.mode == 'tsan'
+        run: sudo sysctl vm.mmap_rnd_bits=28
+      - if: matrix.mode != 'mesa'
+        run: ctest --test-dir out/analysis -L headless --output-on-failure --parallel 1
+        env:
+          ASAN_OPTIONS: detect_leaks=1
+          UBSAN_OPTIONS: print_stacktrace=1
+          TSAN_OPTIONS: halt_on_error=1
+      - if: matrix.mode == 'mesa'
+        run: xvfb-run -a ctest --test-dir out/analysis -L gpu --output-on-failure --parallel 1
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          MESA_GL_VERSION_OVERRIDE: '3.3'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: analysis-${{ matrix.mode }}
+          path: |
+            out/analysis/Testing/Temporary/
+            out/analysis/testing/
+  macos-experimental:
+    continue-on-error: true
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: microsoft/vcpkg
+          ref: a077941aaf7e15e2ac228f5052a1d9a65179ff63
+          path: build-tools/vcpkg
+      - run: '"$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics'
+      - run: cmake --preset macos-arm64
+      - run: cmake --build --preset macos-arm64 --parallel 3
+      - run: ctest --preset macos-arm64
+  relocated-packages:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: windows-2022, artifact: package-msvc}
+          - {os: windows-2022, artifact: package-mingw}
+          - {os: ubuntu-22.04, artifact: package-gcc}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          sparse-checkout: /.github/scripts/
+          sparse-checkout-cone-mode: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ${{ matrix.artifact }}
+          path: packages
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb libgl1-mesa-dri libglx-mesa0 libx11-6
+      - shell: bash
+        run: |
+          if [ -d src ] || [ -d assets ]; then echo "Unexpected source checkout"; exit 1; fi
+          if [ "$RUNNER_OS" = Linux ]; then
+            xvfb-run -a python3 .github/scripts/validate_package.py packages/*.tar.gz --gpu --expected-commit ${{ github.sha }}
+          else
+            python .github/scripts/validate_package.py packages/*.zip --expected-commit ${{ github.sha }}
+          fi
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
